@@ -27,6 +27,8 @@ Built from the assessment brief, the seed README, the seed data (`seed.json`) an
 
 ### Revision log
 
+- **v15 (2026-11-24):** activity log now captures every data table through a generic trigger (decision 30), with actor context from transaction-local settings, a noise filter and a coverage test; the Admin page gets 9 filters, full-text search and commit-style grouping. Bonus estimate ~5.5 h.
+- **v14 (2026-11-24):** activity log (3.18, decisions 28 and 29) replaces the audit-trail bonus: separate `eos_activity` database, transactional outbox, background worker for writes and reads, Admin-only `/admin/activity` page with git-style diffs. Schema doc, API contracts, compose, connections, roles and frontend routes updated.
 - **v13 (2026-11-24):** API contracts in `docs/API_CONTRACTS.md` (decision 27): conventions, error envelope and codes, access levels, every endpoint with seed-based examples, meeting state object, frozen summary format, SSE events, health. `GET /teams/{id}/owners` folded into `GET /teams/{id}`; `/me` now returns the server clock.
 - **v12 (2026-11-24):** frontend made server-first (3.17 rewritten, decision 26): Server Components with streamed sections, Server Actions for writes, `router.refresh()` for live updates, client islands listed one by one, TanStack Query dropped. Related fixes: CSRF header now set server-side, login rate limit uses the forwarded IP, SSR check added to E2E, refresh-latency risk added.
 - **v11 (2026-11-24):** frontend architecture (3.17, decision 25): routes, server-side auth gate, folder layout, shared sections, query keys, mutations and errors, typed client with a drift check, one SSE stream per team, timer, meeting page, forms, time zone display, permissions, states and accessibility, plus a data-flow diagram.
@@ -82,7 +84,7 @@ Prerequisite complete. Section 0 no longer blocks Phase 0.
 | 4 | Sign-in | **Seeded user switcher** | Signed httpOnly cookie, no passwords (3.5) |
 | 5 | To-Do owner choices | **Team's non-Observer members + all Admins** | Same rule for Issue owners. Enforced in API and DB |
 | 6 | Time available | **2.5 to 3 h per day, Mon to Fri**, later raised to 4 h Tue to Fri (decision 22) | Schedule in section 7 |
-| 7 | Bonus items wanted | **All four:** lost-update protection, 1,000-companies note, Issue from Rock/To-Do, audit trail | Ranked in section 9, only after the core is green |
+| 7 | Bonus items wanted | **All four:** lost-update protection, 1,000-companies note, Issue from Rock/To-Do, audit trail | Ranked in section 9, only after the core is green. The audit trail became the activity log (decision 28) |
 | 8 | New request | **Debug log viewer** on its own port showing every API request and response payload plus application errors | Section 3.10. Built in Phase 0 because it pays back in every later phase |
 | 9 | Log viewer: build or reuse | **Dozzle + structured JSON logs** | ~30 min, no custom UI |
 | 10 | Log viewer exposure | **Always on** with `docker compose up` (bound to 127.0.0.1, secrets redacted) | Document it under security notes in the README |
@@ -103,6 +105,9 @@ Prerequisite complete. Section 0 no longer blocks Phase 0.
 | 25 | Frontend structure (planning request) | **Server components for the auth gate, client feature sections on TanStack Query with one key factory, typed client generated from a committed `openapi.json`, one SSE stream per team feeding the query cache** | Section 3.17. Changes the API: SSE moves from `/meetings/{id}/events` to `/teams/{id}/events`, and `/me` returns the company time zone. No hour change; Phase 6 (3.0 h) is now the tightest estimate. TanStack Query part superseded by decision 26 |
 | 26 | New request: server-side rendering wherever possible, client components only where required | **React Server Components by default; Server Actions for all writes; `router.refresh()` on live events; client islands only for interactivity. TanStack Query dropped** | Section 3.17 rewritten. No hour change. Login rate limit now reads the forwarded client IP (3.15) |
 | 27 | API contracts (planning request) | **`docs/API_CONTRACTS.md`:** one error envelope with 25 named codes, access level per endpoint, decimals as strings, server-computed values only, `/me` carries the server clock, eligible owners folded into `GET /teams/{id}`, SSE event formats with `cache_version` as event id | Section 3.5 links it. No hour change; Phase 4 tests take their expected values from its examples |
+| 28 | New request: activity log in a separate database on the same cluster, with a dedicated background worker for its writes and reads | **`eos_activity` database, transactional outbox in the main database, worker container draining it with `SKIP LOCKED` and serving reads over an internal endpoint. Bonus rank 4, replacing the audit trail. Reads are Admin only** | Section 3.18. ~4 h bonus; core schedule unchanged |
+| 29 | New request: activity UI as its own Admin-only page with a git-like before/after diff per activity | **`/admin/activity`, server-rendered, field-level `-`/`+` diff lines plus word-level diff for long text, expandable per event** | Section 3.18; included in the ~4 h |
+| 30 | New request: log all data tables of the main database; filters and search on the activity page | **One generic `SECURITY DEFINER` row trigger (plus a truncate trigger) on every data table writes the outbox; actor and request context passed as transaction-local settings. Page gets 9 filters, full-text search with `websearch` syntax and highlighting, and transaction grouping like git commits** | Section 3.18 rewritten. Bonus estimate 4 h to ~5.5 h |
 
 ---
 
@@ -136,16 +141,18 @@ altri-eos-task/
   docs/API_CONTRACTS.md       # endpoint contracts, error codes, SSE events, seed-based examples
   docs/SCALING.md             # bonus: 1,000 companies note
   seed/seed.json              # copied verbatim from the Drive folder
-  db/init/                    # creates eos_test and eos_report databases and the eos_owner / eos_app / eos_readonly roles
+  db/init/                    # creates eos_test, eos_report and eos_activity databases and all roles
   artifacts/                  # committed Playwright failure trace
   backend/
     app/
       main.py  config.py  clock.py  db.py  cache.py  security.py  logging.py  banner.py
       rules/                  # PURE functions: weeks, status, completion, rocks, order, rating, summary
       models/  schemas/  routers/  services/  authz.py  realtime.py
+      activity/               # bonus: outbox writer helper, worker loop, internal read API
       rules_report.py         # python -m app.rules_report
       seed.py                 # python -m app.seed [--reset]
     alembic/versions/
+    alembic_activity/versions/  # bonus: eos_activity migrations
     tests/{rules,api}/
   frontend/                   # Next.js App Router, standalone build, ecosystem.config.js for pm2-runtime, middleware.ts (CSP nonce)
   e2e/                        # Playwright, two browser contexts
@@ -182,7 +189,7 @@ Full Mermaid ER diagram (renders on GitHub), focused views, every constraint, tr
 | `meeting_attendees` | `PK(meeting_id, user_id)`, `joined_at` |
 | `meeting_ratings` | `PK(meeting_id, user_id)`, `rating CHECK 1..10`, FK to attendees |
 | `meeting_summaries` | `meeting_id PK`, `summary jsonb`, `created_at` (frozen at meeting end, see 3.9) |
-| `audit_events` (bonus) | `ts, actor_id, team_id, entity, entity_id, action, before jsonb, after jsonb, request_id` |
+| `activity_outbox` (bonus) | `id bigserial`, `created_at`, `payload jsonb`: append-only hand-off to the activity worker, filled by a row trigger on every data table (3.18). The events themselves live in the separate `eos_activity` database |
 | `clock_anchor` | One row (`id = 1`): `app_now`, `real_now`. Shared origin of the ticking clock for every API worker (3.2, 3.13) |
 
 Only `measurable_week` sources are core. The Rock and To-Do source columns exist from the first migration so the bonus "Issue from Rock/To-Do" needs no schema rework, just endpoints and two more partial unique indexes.
@@ -278,7 +285,7 @@ Title format follows the seed: `"<Measurable name>, week of <Mon D>"` (e.g. `New
 - **Errors:** unhandled exceptions log a `level=error` line with the traceback and `request_id`. The client gets a generic `500` with the same `request_id` and never sees a stack trace. The frontend shows the `request_id` in error toasts, so any failure can be found in Dozzle in seconds.
 - Toggles: `LOG_PAYLOADS=true` (default per decision 10) and `LOG_LEVEL=debug`, so payload logging can be switched off with one env var.
 - **Security note for the README:** Dozzle needs the Docker socket. Mounting it with `:ro` does **not** limit the Docker API, so Dozzle effectively has full control of the local Docker engine. That is acceptable for a local review stack bound to localhost, never for a shared or production host. Logging full payloads is likewise a dev-only choice. Saying this openly is better for the security score than leaving a reviewer to find it.
-- This is not the audit trail. Logs are transport-level and short-lived; the audit trail (bonus) is durable, domain-level history in the database.
+- This is not the activity log. Logs are transport-level and short-lived; the activity log (3.18, bonus) is durable, domain-level history in its own database.
 
 ### 3.11 `docker compose up` stack and startup banner (decision 13)
 
@@ -290,6 +297,7 @@ One command from a clean clone builds the images, starts everything, migrates, s
 | `redis` | `redis` (pinned tag) | `127.0.0.1:6379` (`REDIS_PORT`) | Cache only, no persistence, LRU at 128 MB (3.14) | `redis-cli ping` healthcheck |
 | `migrate` | api image | none | One-shot: `alembic upgrade head`, then `python -m app.seed`, then exits `0` | `service_completed_successfully` |
 | `api` | `backend/Dockerfile` | `8000` (`API_PORT`) | FastAPI run by **Uvicorn with `API_WORKERS` processes** (default 2, 3.13). API docs at `/docs` (Swagger UI) and `/redoc`, schema at `/openapi.json` | `GET /healthz` returns OK (also checks the DB pool) |
+| `activity` (bonus) | api image | none (internal `8100` only) | Activity worker: drains the outbox into `eos_activity` and serves Admin activity reads to the API (3.18) | internal `/healthz` |
 | `web` | `frontend/Dockerfile` | `3000` (`WEB_PORT`) | Next.js standalone production build run by **`pm2-runtime` in cluster mode** (`WEB_INSTANCES` workers, default 2), proxies `/api` to `api` | `GET /healthz` (a Next route handler; not under `/api`, which is proxied to FastAPI) via `wget` |
 | `logs` | `amir20/dozzle` (pinned tag) | `127.0.0.1:8080` (`LOGS_PORT`) | Log viewer (3.10) | starts immediately |
 | `info` | api image | none | One-shot banner: waits for `api` and `web` to be healthy, prints, exits `0` | n/a |
@@ -306,6 +314,7 @@ info-1  |  App (Next.js)   http://localhost:3000    pm2 cluster x2
 info-1  |  API (FastAPI)   http://localhost:8000    uvicorn x2
 info-1  |  API docs        http://localhost:8000/docs    ReDoc: /redoc
 info-1  |  Logs (Dozzle)   http://localhost:8080
+info-1  |  Activity worker internal only, outbox backlog 0   (bonus)
 info-1  |  Postgres        postgresql://eos:eos_dev_pw@localhost:5432/eos
 info-1  |  Redis (cache)   redis://localhost:6379
 info-1  | --------------------------------------------------------------
@@ -368,6 +377,7 @@ The two timeouts and the application name are passed as asyncpg `server_settings
 |---|---|
 | API pools: `API_WORKERS` x (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) = 2 x 10 | up to 20 |
 | API `LISTEN` connections, one per worker | 2 |
+| Activity worker (bonus, 3.18): 2 to the main database, 3 to `eos_activity` | 5 |
 | `migrate`, `info`, seed, rules report (short-lived, pool size 1 each) | 1 to 4 |
 | Test suite (`NullPool`, against `eos_test`) | a few |
 | **Total at defaults** | **under 30** |
@@ -396,6 +406,8 @@ At startup the API logs a warning if `API_WORKERS x (pool + overflow + 1)` excee
 | Seed | `eos-seed` |
 | Rules report | `eos-rules-report` |
 | Startup banner | `eos-banner` |
+| Activity worker, main database (bonus) | `eos-activity:outbox:<hostname>:<pid>` |
+| Activity worker, activity database (bonus) | `eos-activity:store:<hostname>:<pid>` |
 | Test suite | `eos-test` |
 | API Redis pool (3.14) | `CLIENT SETNAME eos-api:cache:<hostname>:<pid>` (Redis's equivalent) |
 
@@ -548,6 +560,7 @@ Over the limit gives `429` with `Retry-After`. Logins reach FastAPI from the Nex
   - `eos_app` is the API's login: only `SELECT`/`INSERT`/`UPDATE`/`DELETE` on app tables and sequence usage. No DDL, no `TRUNCATE`.
   - `eos_readonly` is the banner's login: `SELECT` only.
   - Effect: even an SQL injection bug in the API could not drop or truncate tables.
+  - Activity log (bonus, 3.18): `eos_app` has no outbox privileges at all (triggers write it as `SECURITY DEFINER`) and may only execute `log_app_event()`; `eos_activity_consumer` gets `SELECT`/`DELETE` on the outbox plus `SELECT` on reference tables; `eos_activity_writer` only `INSERT`/`SELECT` on `activity_events` in `eos_activity`, which makes the log append-only.
 
 **Real-time:** the SSE subscription is authorized at connect with the same team-read check as REST. Events carry only ids and entity types; clients fetch actual data through authorized REST calls, so even a misrouted event exposes nothing beyond an id.
 
@@ -656,6 +669,7 @@ flowchart LR
 | `/teams/[teamId]` | Server, sections streamed in `<Suspense>` | Team page: Scorecard, Issues (unsolved and solved tabs), To-Dos, Rocks |
 | `/teams/[teamId]/meeting` | Server, with client timer and controls | Start, join, or run the team's active meeting |
 | `/meetings/[meetingId]/summary` | Server only | Summary of any ended meeting, including seeded `mt1` and `mt2` |
+| `/admin/activity` (bonus) | Server only | Admin-only activity log with git-style diffs (3.18) |
 | `/healthz` | Route handler | Container healthcheck (3.11) |
 | `/api/*` | `next.config` rewrite (core) or route handler (signing bonus, 3.16) | Proxy to FastAPI, used for the SSE stream and for direct API calls |
 
@@ -700,6 +714,7 @@ frontend/src/
     (app)/teams/[teamId]/loading.tsx
     (app)/teams/[teamId]/meeting/page.tsx
     (app)/meetings/[meetingId]/summary/page.tsx  # server only
+    (app)/admin/activity/page.tsx                # bonus: server only, Admins only
     healthz/route.ts
     error.tsx  not-found.tsx
   features/
@@ -710,6 +725,7 @@ frontend/src/
                 AddTodoDialog.client.tsx, PrioritySelect.client.tsx, actions.ts, schemas.ts
     todos/      TodosSection.tsx, TodoDoneToggle.client.tsx, actions.ts
     rocks/      RocksSection.tsx                 # server only
+    activity/   ActivityList.tsx, ActivityDiff.tsx  # bonus: server only, diff via jsdiff
     meeting/    AgendaStepper.tsx, AttendeeList.tsx, ConcludePanel.tsx, MeetingSummary.tsx,
                 SectionTimer.client.tsx, FacilitatorControls.client.tsx, RatingPicker.client.tsx,
                 JoinOnMount.client.tsx, actions.ts
@@ -740,6 +756,150 @@ frontend/src/
 **Config:** `output: 'standalone'`, `poweredByHeader: false`, `reactStrictMode: true`, `compress: true`. The only env var is the server-side `API_INTERNAL_URL`; nothing uses the `NEXT_PUBLIC_` prefix, so no configuration or secret reaches the browser bundle.
 
 **If time:** Vitest unit tests for the timer maths, date formatting and permission helpers.
+
+### 3.18 Activity log: separate database, background worker, admin diff page (decisions 28 to 30, bonus rank 4)
+
+Replaces the earlier "audit trail" bonus. Fully planned here; built only once the core is green, otherwise described in the decision record.
+
+**Goal:** a durable, append-only record of **every change to every data table in the main database** (who, what, when, before and after), stored in its own database `eos_activity` on the same Postgres cluster, written and read by a dedicated background worker, without slowing or blocking live transactions on the functional tables. Admins browse it on a separate page with filters, full-text search and a git-style diff per change.
+
+```mermaid
+flowchart LR
+    subgraph Main ["Postgres database eos, functional"]
+        FT["All data tables<br/>users, teams, scores, issues, todos, meetings, ..."]
+        TR["Generic row trigger<br/>on every data table"]
+        OB["activity_outbox<br/>append-only hand-off"]
+    end
+    subgraph Act ["Postgres database eos_activity, same cluster"]
+        AE["activity_events<br/>append-only, full-text indexed"]
+    end
+    API["FastAPI, Uvicorn workers"]
+    W["Activity worker<br/>own container"]
+    UI["Admin activity page<br/>filters, search, diffs"]
+    API -->|"write + actor context"| FT
+    FT --> TR
+    TR -->|"same transaction"| OB
+    API -->|"app events: login, logout, denied"| OB
+    OB -->|"NOTIFY wake-up, batch with SKIP LOCKED"| W
+    W -->|"idempotent batch insert"| AE
+    W -->|"delete processed rows"| OB
+    UI -->|"Admin only"| API
+    API -->|"internal call, service token"| W
+    W -->|"filtered, searched, keyset query"| AE
+```
+
+**Capture: one generic trigger on every data table (decision 30).**
+
+- A single PL/pgSQL function `log_row_change()` is attached as an `AFTER INSERT OR UPDATE OR DELETE … FOR EACH ROW` trigger to **every data table** in the main database: `companies`, `users`, `teams`, `memberships`, `measurables`, `scores`, `rocks`, `milestones`, `issues`, `todos`, `meetings`, `meeting_attendees`, `meeting_ratings`, `meeting_summaries`. A statement-level `AFTER TRUNCATE` trigger logs one event per truncated table (test resets, `seed --reset`).
+- It writes one outbox row: table name, operation, primary key, `to_jsonb(OLD)`, `to_jsonb(NEW)`, transaction id (`txid_current()`), timestamp and the actor context.
+- **Actor context:** at the start of every write transaction the API runs `set_config('eos.actor_id', …, true)` plus `eos.actor_name`, `eos.request_id` and `eos.source` (all transaction-local). The trigger reads them with `current_setting(…, true)`. Writes with no context (seed, migrations, manual SQL) are logged as actor `system` with source `seed` or `system`.
+- **Noise filter:** an `UPDATE` whose only changed columns are bookkeeping (`teams.cache_version`, row `version` counters, `updated_at`) is skipped, so the cache bump in every write (3.14) doesn't produce an event of its own. `clock_anchor` and `activity_outbox` itself have no trigger.
+- **Why triggers instead of app code:** coverage is guaranteed. Every path that changes data (API, seed, a manual `psql` fix) is logged, and a new endpoint can't forget to log. A test asserts that every data table has the trigger.
+- The function is `SECURITY DEFINER` (owned by `eos_owner`, `search_path` pinned), so the API's role needs no privileges on the outbox at all.
+- App-level events that change no table (login, logout, refused access) go into the outbox through a second `SECURITY DEFINER` function, `log_app_event()`, which is all `eos_app` may execute.
+
+**Hand-off: transactional outbox, not a queue.**
+
+- The outbox row is written **in the same transaction** as the change. If the change rolls back, so does its log row; if it commits, the log row is guaranteed to exist. No lost events, and no events for changes that never happened.
+- Redis Streams was considered and rejected: Redis is a non-persistent cache that is allowed to fail (3.14), so events could be lost, and making it durable would change its role. Celery or a separate broker adds a service for no gain at this size.
+- Everything heavy (field diffs, readable summaries, name lookups, search indexing, writing to the second database, serving queries) happens in the worker, never in the request.
+
+**Why live transactions are not disturbed:**
+
+- The trigger adds one append-only insert per changed row (no foreign keys, so no extra locks on functional rows): tens of microseconds per row. That is the whole cost inside the live transaction.
+- The worker **never writes to or locks functional tables.** In the main database it locks only outbox rows, selecting batches with `FOR UPDATE SKIP LOCKED`, so neither side ever waits for the other. For readable names it may read reference rows (users, teams, measurables, rocks, meetings) with plain `SELECT`s, cached in an in-memory LRU; in Postgres plain reads take no row locks and never block writers or get blocked by them.
+- Activity data lives in a different database: separate tables, locks, autovacuum and permissions, so activity queries and full-text searches can't contend with functional tables.
+- The worker's connections are capped (2 to the main database, 3 to the activity database) and its batches are small (up to 500 rows, short transactions under `statement_timeout`), so it can't starve the API's pools (3.12).
+- Honest limit: one cluster still shares CPU, disk and WAL. Moving `eos_activity` to its own server later is only a connection-string change (1,000-companies note).
+
+**Processing loop** (`backend/app/activity/worker.py`):
+
+1. Wake on `NOTIFY activity_outbox` (sent by the trigger inside the writing transaction, so delivered only after commit), or every 2 s as a fallback.
+2. Short main-database transaction: `SELECT … FROM activity_outbox ORDER BY id LIMIT 500 FOR UPDATE SKIP LOCKED`.
+3. Build the events: team id (from the row, or from its parent for `scores`, `milestones` and meeting child tables), field-level `changes`, a readable summary from a per-table template, and the search text. Insert them into `eos_activity` with `ON CONFLICT (id) DO NOTHING`; commit.
+4. Delete those outbox rows; commit the main-database transaction.
+
+A crash between steps 3 and 4 only reprocesses the batch, and the outbox id as primary key turns the second insert into a no-op: at-least-once delivery plus an idempotent insert means every event is stored exactly once. `SKIP LOCKED` would also let several workers share the load; one is enough here. The outbox table gets aggressive autovacuum settings because it is constantly inserted into and emptied. On first start the seed produces a few hundred events (source `seed`); the worker drains them in seconds.
+
+**Activity database `eos_activity`** (full schema in `docs/DB_SCHEMA.md`):
+
+- One table, `activity_events`: id (the outbox id), time, transaction id, source (`app`, `seed`, `system`), team, actor id and name snapshot, table name, operation, row id, action, summary, `changes`, full `before` and `after` row snapshots, `request_id`, meeting id, and a generated full-text `search` column with a GIN index.
+- No foreign keys into the main database (impossible across databases), so names are copied in when the event is written and stay historically correct.
+- Append-only by permission: the worker's role there can only `INSERT` and `SELECT`; no app role can update or delete an event.
+- Its own Alembic environment (`backend/alembic_activity/`), run by `migrate`.
+
+**Reads (Admins only, decision 28):**
+
+- One endpoint, `GET /api/v1/activity`, with filters and search (listed under the page below) and keyset pagination `before=<id>&limit=50`. It is the only paginated endpoint, because logs grow without bound. Contract in `docs/API_CONTRACTS.md`.
+- The main API checks access (Admin) with the same policy as everything else, then forwards the query to the worker's internal endpoint. The worker answers from `eos_activity`; the API never connects to that database.
+- The worker's HTTP port (`8100`) is **internal only**: not published to the host, and every call needs the shared service token `ACTIVITY_SERVICE_TOKEN`, so nothing reaches it without passing the API's authorization.
+
+**Admin activity page** (`/admin/activity`, decisions 29 and 30):
+
+- A separate page, Admins only. Its server component checks `/me`: non-Admins get the same "no access" page as for a foreign team, and the API refuses them anyway (`403`). The header shows an *Activity* link only to Admins.
+- **Filters** (all combinable, all in the URL so a filtered view can be bookmarked or shared):
+
+  | Filter | Values |
+  |---|---|
+  | Team | any team, or company-level only |
+  | Table | any data table, or app events |
+  | Operation | insert, update, delete, truncate, app event (login, logout, denied) |
+  | Actor | any user, or `system` |
+  | Source | app, seed, system |
+  | Date range | from / to, in company time (Chicago) |
+  | Row | exact row id, for example `i5` (full history of one record) |
+  | Request | exact `request_id` (everything one request changed, matching Dozzle) |
+  | Meeting | everything changed during one meeting |
+
+- **Search:** one box for full-text search over summaries and before/after values, using Postgres `websearch_to_tsquery`, so `"carrier pickup"`, `pickup -delay` and `priority OR solved` work as people expect. Matches are highlighted on the server with `ts_headline`. Input is capped at 200 characters.
+- The filter bar is a plain `GET` form and *Load older* is a plain link (`?before=<id>` keeping all filters), so filtering, searching and paging all work without client JavaScript. A *Clear filters* link resets the view.
+- **Grouped like commits:** events from the same transaction appear under one header (time, actor, request, how many rows changed), like a git commit touching several files. For example, ending a meeting shows the `meetings` update and the new `meeting_summaries` row together.
+- **Git-style diff per row change**, expandable with a native `<details>` element:
+  - Field by field, like `git diff`: old values on red `-` lines, new values on green `+` lines. Unchanged fields are hidden behind a *show unchanged* toggle (also `<details>`), like diff context.
+  - An insert shows only `+` lines; a delete or a cleared score shows only `-` lines.
+  - Long text (titles, resolution notes) gets a word-level diff inside the line, like `git diff --word-diff`: removed words struck through in red, added words in green.
+  - The worker computes the `changes` list (`[{field, old, new}]`) once, when the event is written. The word-level highlighting is computed on the server at render time with the `diff` (jsdiff) package. No diff code ships to the browser.
+  - Colors always come with `-` / `+` markers and screen-reader labels ("removed", "added"), never color alone.
+
+```
+Nov 11, 10:02 AM · Harper Hill · request req_51ab07e3 · 2 rows changed
+  issues i9 "Carrier pickup delays" · update
+  - solved_at: (empty)
+  + solved_at: Nov 11, 10:02 AM
+  + resolution_note: Switched carrier pickup to 7 AM.
+  todos t_8x2k1m4q · insert
+  + title: Call carrier about pickup window
+  + owner: Harper Hill
+  + due_date: 2026-11-18
+  + source_issue: i9
+```
+
+**Failure behavior:**
+
+- Worker down: the API keeps working and outbox rows pile up; the worker catches up after restart. `/healthz` reports `activity_backlog` (row count, oldest age) and turns `degraded` once the oldest row is over 5 minutes old.
+- Activity reads while the worker is down: `503 activity_unavailable` for that endpoint only.
+
+**Operations:** compose service `activity` (same backend image, command `python -m app.activity`), healthcheck on its internal `/healthz`, Dozzle name `activity worker` in the `app` group, so its logs sit beside the backend and frontend streams. Connection names `eos-activity:outbox:<hostname>:<pid>` and `eos-activity:store:<hostname>:<pid>`.
+
+**Roles** (3.15):
+
+- `eos_app` has **no** privileges on `activity_outbox`; it may only `EXECUTE log_app_event()`. The triggers write the outbox as `SECURITY DEFINER` functions.
+- `eos_activity_consumer` (worker, main database): `SELECT` and `DELETE` on `activity_outbox`, `SELECT` on reference tables for names. Nothing else.
+- `eos_activity_writer` (worker, activity database): `INSERT` and `SELECT` on `activity_events` only, which makes the log append-only.
+- `eos_owner` owns both schemas for migrations.
+
+**Tests:**
+
+- **Coverage:** a catalog query asserts that every table in the main schema except `clock_anchor` and `activity_outbox` has the row trigger and the truncate trigger, so a new table can't be added without logging.
+- Each kind of write produces exactly one event per changed row once the outbox is drained (tests call `drain_outbox()` directly instead of waiting); the seed's events carry source `seed`; a cache-version-only update produces none; `TRUNCATE` produces one event per table.
+- A rolled-back write produces no event.
+- Processing the same batch twice, or two workers draining at once, never duplicates an event.
+- Non-blocking: while a worker transaction holds a batch, an API score edit still commits in under 200 ms.
+- Filters and search: each filter narrows correctly, combinations work, `websearch` syntax (quotes, minus, OR) behaves, keyset paging with filters returns no gaps or repeats.
+- Security: the activity role cannot `UPDATE` or `DELETE` events; `eos_app` cannot read or write the outbox directly; the worker's internal endpoint rejects calls without the service token; non-Admins get `403` from `/activity` and the "no access" page at `/admin/activity`.
+- Diff rendering: a priority change shows one `-` and one `+` line; a changed resolution note shows word-level highlights; a transaction with two rows renders as one group (server HTML snapshot).
+
+**Estimate:** ~5.5 h (bonus): triggers and capture 1.0, worker 1.0, activity database and roles 0.5, read endpoint with filters and search 1.0, admin page with grouping and diffs 1.25, tests 0.75.
 
 ---
 
@@ -870,6 +1030,7 @@ Video rehearsal: log in as `u1` (Avery Admin) in one window and `u3` (Casey Cho)
 | SSE through the Next.js `/api` proxy (now one of several PM2 workers) may be buffered, compressed or cut by the proxy timeout (Next's `experimental.proxyTimeout`, 30 s by default) | Heartbeat every 15 s, `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` on the stream. Prove it in Phase 5 with a 2-minute idle test. Fallback: `EventSource` connects straight to the API on `:8000` with CORS limited to the web origin (cookies still flow, since cookies ignore ports). If the signing bonus (3.16) is built, its route-handler proxy streams SSE itself and this risk goes away |
 | Pool exhaustion: SSE streams holding connections, long transactions, too many workers | SSE releases its session before streaming; short transactions; `statement_timeout` and `idle_in_transaction_session_timeout`; 5 s pool timeout returning `503`; leak-watch logs; connection-budget check at startup (3.12) |
 | Stale or leaked cache data (wrong status after a write, another team's data) | Cache versions stamped in Postgres in the same transaction as each write; dates and weeks in keys; authz before every cache lookup; correctness paths bypass the cache; API suite runs with the cache on and off (3.14) |
+| Activity outbox grows or bloats while the activity worker is down (bonus) | API unaffected; worker catches up on restart; aggressive autovacuum on the outbox; `/healthz` backlog warning after 5 minutes (3.18) |
 | Missed real-time events when a worker's `LISTEN` connection drops | Reconnect loop, then local clients refetch their snapshot (3.12 item 3); events are hints, the DB is the truth |
 | `router.refresh()` too slow for the ~1 s sync target with several attendees | Debounce bursts; apply `meeting.state` to the timer and stepper client-side at once; Redis-cached FastAPI reads and PM2 workers keep renders cheap; measure in Phase 6. Fallback: send the changed section's data in the event and update it client-side (3.17) |
 | Nonce-based CSP breaks Next.js pages or shadcn components | Set it up in Phase 0 while the app is tiny; documented fallback `script-src 'self' 'unsafe-inline'` (3.15) |
@@ -896,7 +1057,7 @@ Video rehearsal: log in as `u1` (Avery Admin) in one window and `u3` (Casey Cho)
 | 1 | **Lost-update protection** on scores and Issue priority: `version` column (already in schema), `ETag` on reads, `If-Match` on `PUT`/`PATCH` gives `409` with the current value when stale. Requests without `If-Match` keep "last save wins", so the core rule still holds. UI shows "changed by someone else, reload?" | 0.75 h | Cheapest, columns already planned, and it strengthens the concurrency story graded at 20% |
 | 2 | **1,000-companies note** (`docs/SCALING.md`): `company_id` on every table, tenant-leading composite indexes, optional Postgres row-level security, stateless API workers, SSE fan-out through Redis or `NOTIFY` channels per meeting, partitioning scores by company later | 0.25 h | Docs only, high signal for a senior role |
 | 3 | **Make it an Issue from an off-track Rock or overdue To-Do**: endpoints plus two partial unique indexes on `source_rock_id` / `source_todo_id` (columns already in schema), same concurrency pattern and tests as 3.8 | 1.0 h | Reuses the core pattern, but needs UI and tests |
-| 4 | **Audit trail**: service layer writes `audit_events` in the same transaction as each change, with `request_id` linking to the logs; Admin-only `GET /teams/{id}/audit` | 1.0 h | Most new surface area |
+| 4 | **Activity log** (3.18): every data table captured by triggers, separate `eos_activity` database, transactional outbox, background worker for writes and reads, Admin-only `/admin/activity` page with filters, full-text search and git-style diffs | 5.5 h | Altri lists an audit trail as a bonus; this is the largest bonus, so the cheaper ones go first |
 | 5 | **Signed Next.js to FastAPI messages** (3.16): HMAC request and response signing with boot-time key cache, replay protection, signed SSE events, request-body gzip, signing helper and shared test vectors | 2.0 h | Your request, but not on Altri's bonus list, so the four items they named go first. Move it up if you prefer |
 
 Any bonus item not built gets a two-line "how I would do it" note in the decision record instead.

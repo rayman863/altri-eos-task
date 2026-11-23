@@ -42,8 +42,6 @@ erDiagram
     meeting_attendees ||--o| meeting_ratings : gives
     meetings ||--o| meeting_summaries : "frozen at end"
 
-    users |o--o{ audit_events : "actor (bonus)"
-    teams |o--o{ audit_events : "scope (bonus)"
 
     companies {
         text id PK "co_1"
@@ -168,17 +166,10 @@ erDiagram
         timestamptz created_at
     }
 
-    audit_events {
-        bigint id PK "bonus"
-        timestamptz ts
-        text actor_id FK "nullable"
-        text team_id FK "nullable"
-        text entity "issue, todo, score, meeting"
-        text entity_id
-        text action "create, update, solve, delete"
-        jsonb before "nullable"
-        jsonb after "nullable"
-        text request_id "links to API logs"
+    activity_outbox {
+        bigint id PK "bonus, bigserial"
+        timestamptz created_at
+        jsonb payload "table, op, row id, old, new, txid, actor, request"
     }
 
     clock_anchor {
@@ -296,6 +287,10 @@ Created by `db/init/` on first start. See section 3.15 of the development plan.
 | `eos_owner` | Migrations, seed, rules report, test resets | Owns the schema: DDL, `TRUNCATE`, everything |
 | `eos_app` | The API (all Uvicorn workers) | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on app tables; `USAGE` on sequences. No DDL, no `TRUNCATE` |
 | `eos_readonly` | Startup banner | `SELECT` only |
+| `eos_activity_consumer` (bonus) | Activity worker, main database | `SELECT`, `DELETE` on `activity_outbox`; `SELECT` on reference tables for names. Nothing else |
+| `eos_activity_writer` (bonus) | Activity worker, `eos_activity` database | `INSERT`, `SELECT` on `activity_events` only, so the log is append-only |
+
+With the activity log, `eos_app` gets **no** privileges on `activity_outbox`: the capture triggers are `SECURITY DEFINER` functions owned by `eos_owner`, and the API may only `EXECUTE log_app_event()` for events that change no table (login, logout, refused access).
 
 Default privileges are set so tables created by later migrations get the same grants automatically. An SQL injection bug in the API could still read or change rows its role allows, but could not drop or truncate tables or change the schema.
 
@@ -308,7 +303,7 @@ Default privileges are set so tables created by later migrations get the same gr
 | `measurables (team_id)`, `rocks (team_id, quarter)`, `milestones (rock_id)` | Team page sections |
 | `meetings (team_id, ended_at)` | Active meeting lookup, ended meeting list |
 | `memberships (team_id)` | Team member and owner lists (the PK starts with `user_id`) |
-| `audit_events (team_id, ts)` | Bonus audit view |
+| `activity_outbox` primary key | Activity worker reads batches in id order (bonus) |
 | `scores` primary key | Scorecard grid (13 weeks per Measurable) |
 
 ## Design notes
@@ -321,6 +316,59 @@ Default privileges are set so tables created by later migrations get the same gr
 - **`teams.cache_version`** is incremented in the same transaction as every team-scoped write (scores, Issues, To-Dos, meeting actions). Redis cache keys include it, so a cached read model can never be served after the data it was built from changed, even if Redis is outdated or briefly unreachable. See section 3.14 of the development plan.
 - **`version` columns** on `scores` and `issues` support the lost-update bonus (`If-Match` gives `409`). Without that header, the last save wins, as the brief requires for scores.
 - **`clock_anchor`** holds one row: the shared origin of the ticking clock. Every API worker computes `now = app_now + (wall clock - real_now)` from it, so all workers show the same meeting timer and a worker restart does not reset it. The row is replaced when the `APP_NOW` setting changes. Required because the API runs several Uvicorn workers.
+
+## Activity capture triggers (bonus)
+
+Plan section 3.18. One generic function records every change to every data table in the main database.
+
+| Object | Definition |
+|---|---|
+| `log_row_change()` | PL/pgSQL, `SECURITY DEFINER`, owned by `eos_owner`, `SET search_path = public, pg_temp`. Inserts one `activity_outbox` row with table name, operation, primary key, `to_jsonb(OLD)`, `to_jsonb(NEW)`, `txid_current()`, `now()` and the actor context, then `pg_notify('activity_outbox', '')` |
+| Row trigger | `AFTER INSERT OR UPDATE OR DELETE … FOR EACH ROW EXECUTE FUNCTION log_row_change(<ignored columns>)` on `companies`, `users`, `teams`, `memberships`, `measurables`, `scores`, `rocks`, `milestones`, `issues`, `todos`, `meetings`, `meeting_attendees`, `meeting_ratings`, `meeting_summaries` |
+| Truncate trigger | `AFTER TRUNCATE … FOR EACH STATEMENT` on the same tables; one event per truncated table |
+| Ignored columns | Passed as trigger arguments: `cache_version`, `version`, `updated_at`. An `UPDATE` that changes only these is not logged |
+| Actor context | Transaction-local settings read with `current_setting(name, true)`: `eos.actor_id`, `eos.actor_name`, `eos.request_id`, `eos.source`. The API sets them with `set_config(…, true)` at the start of each write transaction; when missing, the actor is `system` |
+| `log_app_event(kind, actor_id, actor_name, request_id, details jsonb)` | `SECURITY DEFINER`; the only way `eos_app` can add to the outbox, for login, logout and refused access |
+| Not captured | `clock_anchor`, `activity_outbox` itself, `alembic_version`, and schema changes (DDL) |
+
+A test queries `pg_trigger` and fails if any table in the main schema, other than the ones listed as not captured, lacks the row or truncate trigger.
+
+## Activity database `eos_activity` (bonus)
+
+A separate database on the same Postgres cluster, written and read only by the activity worker (plan 3.18). Foreign keys into the main database are impossible across databases, so names are copied in when an event is written and stay historically correct.
+
+```mermaid
+erDiagram
+    activity_events {
+        bigint id PK "same id as the outbox row"
+        timestamptz occurred_at "time of the change"
+        bigint txid "groups rows changed together"
+        text source "app, seed or system"
+        text team_id "null for company-level events"
+        text actor_id "no FK, other database"
+        text actor_name "snapshot at write time"
+        text table_name "main-database table, or app"
+        text op "insert, update, delete, truncate, event"
+        text row_id "primary key of the changed row"
+        text action "readable verb, for example solved"
+        text summary "one readable line"
+        jsonb changes "field, old, new list for the diff"
+        jsonb before "full row before, nullable"
+        jsonb after "full row after, nullable"
+        text request_id "links to API logs"
+        text meeting_id "nullable"
+        tsvector search "generated, full-text"
+    }
+```
+
+| Kind | Definition |
+|---|---|
+| Append-only | `eos_activity_writer` can only `INSERT` and `SELECT`; no app role can `UPDATE` or `DELETE` |
+| CHECK | `op IN ('insert','update','delete','truncate','event')`; `source IN ('app','seed','system')` |
+| Full-text | `search` is `GENERATED ALWAYS AS (to_tsvector('simple', summary || ' ' || coalesce(before::text, '') || ' ' || coalesce(after::text, ''))) STORED`, with a GIN index; queried with `websearch_to_tsquery`, highlighted with `ts_headline` |
+| Feed index | `(id DESC)`, the newest-first keyset |
+| Filter indexes | `(team_id, id DESC)`, `(actor_id, id DESC)`, `(table_name, row_id, id DESC)`, `(occurred_at)`, `(txid)`, `(request_id)`, `(meeting_id)` |
+| Growth | Monthly range partitioning on `occurred_at` is the next step at scale (1,000-companies note) |
 
 ## Snapshot shape (`meeting_summaries.summary`)
 

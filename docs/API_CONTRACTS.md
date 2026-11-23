@@ -19,7 +19,7 @@ Examples use the seed data at the default `APP_NOW` (`2026-11-11T15:00:00Z`, Wed
 | Computed values | Statuses, overdue flags, completion rates, Rock status and progress, Issue order and ratings are always computed by the server (rules module). Clients display them, never recompute them |
 | Ids | Seed ids are kept (`u1`, `m1`, `t12`, `mt1`). New rows get a prefixed random id, for example `i_7k3m9q2x`. Path ids must match `^[a-z0-9_]{1,64}$` |
 | Unknown fields | Rejected with `422` (`extra="forbid"`) |
-| Lists | No pagination: the data set is one company. Documented as a known limitation |
+| Lists | No pagination: the data set is one company. Documented as a known limitation. The one exception is the activity log (bonus), which uses keyset pagination because it grows without bound |
 | Compression | Responses over 1 KB are gzipped when the client accepts it; SSE is never compressed |
 | Caching | Authenticated responses send `Cache-Control: no-store` |
 
@@ -65,6 +65,7 @@ Every error, whatever the status, has the same shape:
 | 429 | `rate_limited` | Over a rate limit; `Retry-After` header set |
 | 500 | `internal_error` | Unexpected error; details only in the logs, found by `request_id` |
 | 503 | `db_busy` | No database connection free within 5 s |
+| 503 | `activity_unavailable` | Only with the activity log bonus: the activity worker is down; the rest of the API keeps working |
 
 Validation example (`priority: 9`):
 
@@ -123,6 +124,7 @@ Access is checked before anything else, including the cache (plan 3.14). An inac
 | `PUT /meetings/{meeting_id}/rating` | Rater | 200 | 403 `not_attendee`, 409 `meeting_ended`, 422 |
 | `GET /meetings/{meeting_id}/summary` | Team read | 200 | 403, 404, 409 `meeting_not_ended` |
 | `GET /teams/{team_id}/events` | Team read | 200 SSE stream | 403, 429 (more than 5 streams) |
+| `GET /activity` (bonus) | Admin | 200 | 403, 422, 503 `activity_unavailable` |
 | `GET /healthz` | Public | 200 | |
 
 ## 3. Session
@@ -477,11 +479,65 @@ The event `id` is the team's `cache_version`, which only goes up. On reconnect t
   "redis": "ok",
   "pool": { "size": 5, "checked_out": 1, "overflow": 0 },
   "cache": { "hits": 1204, "misses": 87 },
+  "activity_backlog": { "rows": 0, "oldest_age_s": 0 },
   "version": "1.0.0"
 }
 ```
 
-`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it. A database failure gives HTTP 503.
+`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it, and, with the activity log bonus, when the oldest outbox row is more than 5 minutes old. A database failure gives HTTP 503.
+
+## 11a. Activity log (bonus): `GET /activity`
+
+Admins only (plan 3.18). The main API checks access, then forwards the query to the activity worker; it never touches the activity database itself. Newest first, keyset-paginated.
+
+| Query parameter | Meaning |
+|---|---|
+| `q` | Full-text search over summaries and before/after values, `websearch` syntax: `"carrier pickup"`, `pickup -delay`, `priority OR solved`. Max 200 characters |
+| `team_id` | One team; `none` for company-level events only |
+| `table` | A main-database table name, or `app` for app events |
+| `op` | `insert`, `update`, `delete`, `truncate`, `event` |
+| `actor_id` | A user id, or `system` |
+| `source` | `app`, `seed`, `system` |
+| `from`, `to` | Calendar dates in company time, inclusive |
+| `row_id` | Exact row id, for the full history of one record |
+| `request_id` | Everything one request changed |
+| `meeting_id` | Everything changed during one meeting |
+| `before` | Event id cursor from the previous page's `next_before` |
+| `limit` | 1 to 100, default 50 |
+
+All filters combine with AND. Unknown parameters or bad values give `422`.
+
+```json
+{
+  "items": [
+    {
+      "id": 1043,
+      "occurred_at": "2026-11-11T16:02:11Z",
+      "txid": 88231,
+      "source": "app",
+      "team": { "id": "team_ops", "name": "Operations" },
+      "actor": { "id": "u8", "name": "Harper Hill" },
+      "table": "issues",
+      "op": "update",
+      "row_id": "i9",
+      "action": "solved",
+      "summary": "Harper Hill solved Issue \"Carrier pickup delays\"",
+      "summary_highlighted": "Harper Hill solved Issue \"<mark>Carrier pickup</mark> delays\"",
+      "changes": [
+        { "field": "solved_at", "old": null, "new": "2026-11-11T16:02:11Z" },
+        { "field": "resolution_note", "old": null, "new": "Switched carrier pickup to 7 AM." }
+      ],
+      "before": { "id": "i9", "title": "Carrier pickup delays", "priority": 2, "solved_at": null, "resolution_note": null },
+      "after": { "id": "i9", "title": "Carrier pickup delays", "priority": 2, "solved_at": "2026-11-11T16:02:11Z", "resolution_note": "Switched carrier pickup to 7 AM." },
+      "request_id": "req_51ab07e3",
+      "meeting_id": null
+    }
+  ],
+  "next_before": 1042
+}
+```
+
+(`before` and `after` are full row snapshots; shortened here.) `summary_highlighted` is present only when `q` is set: it is server-escaped HTML in which only `<mark>` tags are allowed. `next_before` is `null` on the last page. Events sharing a `txid` changed together in one transaction; the Admin page groups them like a git commit.
 
 ## 12. OpenAPI and the typed client
 
