@@ -5,13 +5,13 @@ Built from the assessment brief, the seed README, the seed data (`seed.json`) an
 | | |
 |---|---|
 | **Deadline** | Saturday 2026-11-28, 11:59 PM EST (= 2026-11-29 04:59 UTC) |
-| **Availability** | 4 h per day Tue to Fri, ~4.25 h Saturday (decisions 22 to 24) |
-| **Estimate** | Core ~21.25 h, including the 1 h Docker setup (done), the meeting snapshot, the compose startup banner, PM2, connection pooling, multi-worker API, the Redis cache, Dozzle stream separation, security hardening and gzip, so ~20.25 h left. Bonus work is ranked and only runs after the core is green (section 9) |
+| **Availability** | 4 h per day Tue to Fri, ~4.5 h Saturday (decisions 22 to 24 and 31) |
+| **Estimate** | Core ~21.5 h, including the 1 h Docker setup (done), the meeting snapshot, the compose startup banner, PM2, connection pooling, multi-worker API, the Redis cache, Dozzle stream separation, security hardening, gzip and ~0.25 h for layer switches, so ~20.5 h left: ~15.25 h graded core, ~4 h platform layers, ~1.25 h docs and video. Bonus work is ranked and only runs after the core is green (section 9) |
 | **Build starts** | Tuesday 2026-11-24 (Monday went to planning and the Docker setup) |
 | **Product** | A Ninety/EOS-style weekly team meeting tool: Scorecard (Measurables), Rocks, To-Dos, Issues, plus a live Level 10 Meeting |
 | **Stack (mandated)** | Next.js + TypeScript + shadcn/ui + Tailwind, FastAPI, Postgres with migrations, `docker compose up` |
 
-> **Budget warning:** the remaining core (~20.25 h) needs 4 h a day Tue to Fri plus ~4.25 h on Saturday (section 7), with no slack. It is well above the brief's own 10 to 14 h estimate, and the brief says a solid core beats a wide one. Bonus items only happen if phases finish faster than estimated. With AI help that is realistic, but plan for it not happening.
+> **Budget warning:** the remaining work (~20.5 h) needs 4 h a day Tue to Fri plus ~4.5 h on Saturday (section 7), with no slack. The build order (section 5) puts every graded feature first, so a slip lands on the platform layers, which can ship switched off, rather than on graded work. It is well above the brief's own 10 to 14 h estimate, and the brief says a solid core beats a wide one. Bonus items only happen if phases finish faster than estimated. With AI help that is realistic, but plan for it not happening.
 
 **Guiding rule from the brief:** "A solid core beats a wide, shaky one." Evaluation weights tell us where to spend the hours:
 
@@ -27,6 +27,7 @@ Built from the assessment brief, the seed README, the seed data (`seed.json`) an
 
 ### Revision log
 
+- **v16 (2026-11-24):** review pass (decision 31). Build reordered: graded core first (Phases 0 to 7), then platform layers L1 to L5 behind switches, then docs and video; schedule re-cut with a Friday "graded core complete" check and a Saturday guard. Seven seams fixed: team-row lock order, section 9 core scope, signing placement after the server-first rewrite, `meeting.state` wording, Redis-free seeding for tests and the report, cut-list reference, activity triggers in test and report databases.
 - **v15 (2026-11-24):** activity log now captures every data table through a generic trigger (decision 30), with actor context from transaction-local settings, a noise filter and a coverage test; the Admin page gets 9 filters, full-text search and commit-style grouping. Bonus estimate ~5.5 h.
 - **v14 (2026-11-24):** activity log (3.18, decisions 28 and 29) replaces the audit-trail bonus: separate `eos_activity` database, transactional outbox, background worker for writes and reads, Admin-only `/admin/activity` page with git-style diffs. Schema doc, API contracts, compose, connections, roles and frontend routes updated.
 - **v13 (2026-11-24):** API contracts in `docs/API_CONTRACTS.md` (decision 27): conventions, error envelope and codes, access levels, every endpoint with seed-based examples, meeting state object, frozen summary format, SSE events, health. `GET /teams/{id}/owners` folded into `GET /teams/{id}`; `/me` now returns the server clock.
@@ -108,6 +109,7 @@ Prerequisite complete. Section 0 no longer blocks Phase 0.
 | 28 | New request: activity log in a separate database on the same cluster, with a dedicated background worker for its writes and reads | **`eos_activity` database, transactional outbox in the main database, worker container draining it with `SKIP LOCKED` and serving reads over an internal endpoint. Bonus rank 4, replacing the audit trail. Reads are Admin only** | Section 3.18. ~4 h bonus; core schedule unchanged |
 | 29 | New request: activity UI as its own Admin-only page with a git-like before/after diff per activity | **`/admin/activity`, server-rendered, field-level `-`/`+` diff lines plus word-level diff for long text, expandable per event** | Section 3.18; included in the ~4 h |
 | 30 | New request: log all data tables of the main database; filters and search on the activity page | **One generic `SECURITY DEFINER` row trigger (plus a truncate trigger) on every data table writes the outbox; actor and request context passed as transaction-local settings. Page gets 9 filters, full-text search with `websearch` syntax and highlighting, and transaction grouping like git commits** | Section 3.18 rewritten. Bonus estimate 4 h to ~5.5 h |
+| 31 | Plan review: fix the seams and reorder the build | **Graded core first (Phases 0 to 7), then platform layers L1 to L5 behind config switches, then docs and video. Seven fixes: team-row lock order, core scope in section 9, signing in the server-side client, `meeting.state` wording, seed without Redis for tests and the report, cut-list reference, activity triggers in test and report databases** | Sections 5 and 7 rewritten; 3.14, 3.15, 3.16, 3.18, 8, 9 and `docs/DB_SCHEMA.md` fixed. ~20.5 h left, Saturday ~4.5 h |
 
 ---
 
@@ -275,7 +277,7 @@ Title format follows the seed: `"<Measurable name>, week of <Mon D>"` (e.g. `New
 
 - **Viewer:** a Dozzle container in `docker-compose.yml`, always on, published as `127.0.0.1:8080:8080` so it is only reachable from the local machine. Pin an exact image tag. It shows the live logs of every container (api, web, db) with search and filtering.
 - **Backend and frontend logs are separate streams (decision 20).** Dozzle shows one log stream per container, so `api` (FastAPI) and `web` (Next.js under PM2) never mix. Compose labels make them easy to find: `dev.dozzle.name` gives readable names (`backend (FastAPI)`, `frontend (Next.js / PM2)`), and `dev.dozzle.group` puts them in an `app` group, apart from an `infra` group (`db`, `redis`). The two can be opened side by side in Dozzle.
-  - **Frontend (PM2):** run `pm2-runtime --json`, so every line is JSON tagged with the PM2 process id and `out`/`err` type (confirm the exact fields in Phase 0). The app's own server logs (pino) add `worker` from `NODE_APP_INSTANCE`, which PM2 sets for each cluster worker. Worker 0 and worker 1 can then be filtered apart inside the `web` stream. Fully separate streams per PM2 worker would need one container per worker, which defeats cluster mode.
+  - **Frontend (PM2):** run `pm2-runtime --json`, so every line is JSON tagged with the PM2 process id and `out`/`err` type (confirm the exact fields when building layer L2). The app's own server logs (pino) add `worker` from `NODE_APP_INSTANCE`, which PM2 sets for each cluster worker. Worker 0 and worker 1 can then be filtered apart inside the `web` stream. Fully separate streams per PM2 worker would need one container per worker, which defeats cluster mode.
   - **Backend (Uvicorn):** the JSON request logs include `pid`, so the two Uvicorn workers filter the same way. Uvicorn's built-in access log is turned off to avoid duplicate lines.
   - **Optional, if time:** browser errors are posted to a small `web` route and logged there, so client-side crashes also land in the frontend stream.
 - **API logging middleware** (`backend/app/logging.py`), one JSON line per request: `ts, level, request_id, method, path, query, user_id, status, duration_ms, request_body, response_body`.
@@ -475,7 +477,8 @@ Redis sits between the API and Postgres as a **cache-aside read layer**: the API
 - Postgres delivers `NOTIFY` only at commit, when the new version is already visible, so attendees who refetch on the event always get fresh data, across browsers and workers.
 - Old entries are never read again and expire through their TTL.
 - Coarse on purpose: any write in a team invalidates all of that team's read models. Writes are rare next to reads (a meeting makes tens of writes an hour), and one counter is far easier to prove correct than one per section.
-- The seed script bumps the global generation `g` in Redis, which orphans all reference entries at once. If it cannot reach Redis it exits non-zero, so `api` never starts on top of outdated reference data. Reference data cannot change any other way, because users, teams, memberships, Measurables and Rocks have no edit endpoints.
+- **Lock order (one hot row per team):** the bump locks the team's row until commit, so writes within one team queue behind each other. That is fine at this scale (short transactions, tens of writes an hour). To rule out deadlocks, the bump is always the **first** statement of every team-scoped write transaction, so every transaction takes the team lock before any other row lock. Writes in different teams never wait on each other. The bump is built in Phase 4, before the cache exists, so the write path never changes later.
+- The seed script bumps the global generation `g` in Redis, which orphans all reference entries at once. If it cannot reach Redis it exits non-zero, so `api` never starts on top of outdated reference data. Reference data cannot change any other way, because users, teams, memberships, Measurables and Rocks have no edit endpoints. Only the demo seed run by `migrate` does this: `seed --reset` in tests flushes the test Redis index (1) instead, and the rules report's scratch seed never touches Redis, so neither needs Redis to be running.
 
 **Failure behavior (Redis is optional at runtime):**
 
@@ -562,14 +565,14 @@ Over the limit gives `429` with `Retry-After`. Logins reach FastAPI from the Nex
   - Effect: even an SQL injection bug in the API could not drop or truncate tables.
   - Activity log (bonus, 3.18): `eos_app` has no outbox privileges at all (triggers write it as `SECURITY DEFINER`) and may only execute `log_app_event()`; `eos_activity_consumer` gets `SELECT`/`DELETE` on the outbox plus `SELECT` on reference tables; `eos_activity_writer` only `INSERT`/`SELECT` on `activity_events` in `eos_activity`, which makes the log append-only.
 
-**Real-time:** the SSE subscription is authorized at connect with the same team-read check as REST. Events carry only ids and entity types; clients fetch actual data through authorized REST calls, so even a misrouted event exposes nothing beyond an id.
+**Real-time:** the SSE subscription is authorized at connect with the same team-read check as REST. Events carry ids and entity types, except `meeting.state`, which carries the meeting state object (`docs/API_CONTRACTS.md`). Every receiver is an authorized reader of that team, so an event never contains anything its receiver couldn't fetch through REST anyway. Payloads stay well under `NOTIFY`'s 8000-byte limit.
 
 **Errors and logs:** generic `500` with a `request_id`, never a stack trace; FastAPI debug off; cookies, auth headers and the session token redacted in logs (3.10); JSON logging escapes newlines, so user text cannot forge log lines.
 
 **Containers:**
 
 - `api` and `web` run as a non-root user, with `no-new-privileges` and all Linux capabilities dropped.
-- Read-only root filesystem with a `tmpfs` for `/tmp` (and `PM2_HOME` pointed there) if it works cleanly in Phase 0; otherwise documented.
+- Read-only root filesystem with a `tmpfs` for `/tmp` (and `PM2_HOME` pointed there) if it works cleanly when building layer L4; otherwise documented.
 - Postgres, Redis and Dozzle keep their official images' defaults.
 - `.dockerignore` keeps `.env`, `.git` and `node_modules` out of images.
 
@@ -596,13 +599,13 @@ Browser <--(gzip)-- Next.js verifies signature <--(HMAC-signed, gzipped response
 **Gzip (core):**
 
 - Browser and Next.js: Next's production server gzips responses by default (`compress: true`); keep it on.
-- FastAPI: Starlette `GZipMiddleware` with `minimum_size=1024`. `text/event-stream` is explicitly excluded so SSE events are never held back in a compression buffer. Check in Phase 0 whether the installed Starlette version already skips SSE; exclude it explicitly either way.
+- FastAPI: Starlette `GZipMiddleware` with `minimum_size=1024`. `text/event-stream` is explicitly excluded so SSE events are never held back in a compression buffer. When building layer L5, check whether the installed Starlette version already skips SSE; exclude it explicitly either way.
 - Request bodies are small JSON (64 KB cap), so they are not compressed in the core. With the signing bonus, the Next proxy gzips request bodies over 1 KB and FastAPI decompresses them with a 64 KB decompressed-size cap, which blocks zip bombs.
 
 **HMAC signing (bonus rank 5), Next.js server to FastAPI only:**
 
 - **Why this hop:** the secret lives in env on the `web` and `api` containers and never reaches the browser. A secret in browser JavaScript can be read in devtools, so it would only be obscurity. The browser hop is protected by the session cookie and CSRF layers instead (3.15).
-- **Proxy:** Next `rewrites` are replaced by a route handler (`frontend/app/api/[...path]/route.ts`) that adds the signature headers and verifies responses. Side benefit: it controls SSE streaming directly, which removes the proxy-timeout risk in section 8.
+- **Where signing happens:** in the shared server-side client `lib/api/server.ts` (3.17), which every Server Component and Server Action already uses, so all of their calls are signed and all responses verified in one place. The browser-facing `/api` proxy (SSE stream, direct API calls) switches from a `rewrites` rule to a route handler (`frontend/app/api/[...path]/route.ts`) that uses the same client. Side benefit: that handler controls SSE streaming itself, which removes the proxy-timeout risk in section 8.
 - **Keys:** env `API_SIGNING_SECRET` (at least 32 random bytes) and `API_SIGNING_SALT`, identical in `web` and `api`, with a key id `API_SIGNING_KID`. At boot each process derives two keys with HKDF-SHA256: one for requests (Next to API) and one for responses (API to Next). A captured request signature can therefore never pass as a response signature.
 - **Boot-time key cache (your LRU requirement):** derived keys are computed once at startup and held in an in-memory LRU keyed by key id (`functools.lru_cache(maxsize=8)` in Python, a small `Map`-based LRU in Node). No request ever re-derives a key. Rotation works by adding the new key id next to the old one. A process refuses to start if the secret is missing or shorter than 32 bytes. Secrets and derived keys are never logged.
 - **What is signed (request):** `v1`, method, path with sorted query, timestamp, nonce, and the SHA-256 of the uncompressed body, joined by newlines. Headers: `X-EOS-Key-Id`, `X-EOS-Timestamp`, `X-EOS-Nonce` (128 random bits), `X-EOS-Signature` (HMAC-SHA256, base64url).
@@ -612,7 +615,7 @@ Browser <--(gzip)-- Next.js verifies signature <--(HMAC-signed, gzipped response
   - Timestamp within ±60 s of the **real wall clock**, not `APP_NOW`, which is business time and starts in 2026-11-11.
   - Nonce single-use: Redis `SET NX EX 120`. If Redis is down, a per-worker LRU of recent nonces (bounded at about 10,000) is used and a warning is logged, since it can't catch a replay sent to a different worker.
   - Any failure gives `401 signature_invalid` with no hint about which part failed.
-- **Next.js verification:** the proxy checks the response signature before passing anything to the browser. A mismatch returns `502` to the browser and logs an error.
+- **Next.js verification:** the server-side client checks every response signature before a Server Component, Server Action or the proxy uses the data. A mismatch becomes a `502` (an inline error card on the page, or the proxy's response) and logs an error.
 - **SSE:** a stream can't carry one signature up front, so each event carries its own `sig` over the request nonce, event id and SHA-256 of the event data. The proxy verifies every event before forwarding it.
 - **Exempt routes:** `/healthz`, `/docs`, `/redoc`, `/openapi.json` (read-only, no user data).
 - **Direct API access:** unsigned calls to `:8000` get `401`. The README shows two ways in: through `http://localhost:3000/api/v1/...` (the Next proxy signs it; needs the session cookie), or `make api ARGS="GET /api/v1/teams"`, a small script that signs with the env secret. Swagger's "Try it out" on `:8000` won't work, and that is documented.
@@ -819,7 +822,7 @@ flowchart LR
 3. Build the events: team id (from the row, or from its parent for `scores`, `milestones` and meeting child tables), field-level `changes`, a readable summary from a per-table template, and the search text. Insert them into `eos_activity` with `ON CONFLICT (id) DO NOTHING`; commit.
 4. Delete those outbox rows; commit the main-database transaction.
 
-A crash between steps 3 and 4 only reprocesses the batch, and the outbox id as primary key turns the second insert into a no-op: at-least-once delivery plus an idempotent insert means every event is stored exactly once. `SKIP LOCKED` would also let several workers share the load; one is enough here. The outbox table gets aggressive autovacuum settings because it is constantly inserted into and emptied. On first start the seed produces a few hundred events (source `seed`); the worker drains them in seconds.
+A crash between steps 3 and 4 only reprocesses the batch, and the outbox id as primary key turns the second insert into a no-op: at-least-once delivery plus an idempotent insert means every event is stored exactly once. `SKIP LOCKED` would also let several workers share the load; one is enough here. The outbox table gets aggressive autovacuum settings because it is constantly inserted into and emptied. On first start the seed produces a few hundred events (source `seed`); the worker drains them in seconds. The triggers come with the main schema migration, so they also exist in `eos_test` and `eos_report`, where no worker runs: tests drain their outbox themselves with `drain_outbox()`, and the rules report truncates its scratch database on every run, so neither outbox grows without bound.
 
 **Activity database `eos_activity`** (full schema in `docs/DB_SCHEMA.md`):
 
@@ -935,20 +938,55 @@ Also: `m5` has a score in the **current** week but gaps in two closed weeks, so 
 
 ---
 
-## 5. Phased build plan (~21.25 h core, ~20.25 h left)
+## 5. Phased build plan (~20.5 h left, graded core first)
+
+**Order (decision 31):** build the graded journey end to end first, on the simplest settings, then add the platform layers you chose (multiple API workers, PM2 cluster, Redis cache, CSP and rate limits, observability polish). Every layer sits behind a config switch, so an unfinished one can ship switched off instead of breaking the app. Nothing is dropped; only the order changes. If time runs short, the slip lands on layers, not on graded features.
+
+**Designed in from day one**, so the layers need no rework later: `NOTIFY`-based real-time fan-out (it works with one worker too), the database clock anchor, and the `teams.cache_version` bump as the first statement of every team write (3.14).
+
+### Graded core (~15.25 h)
 
 | # | Phase | Hours | Exit criteria |
 |---|---|---|---|
-| P | **Prerequisite: Docker setup** (section 0, you) | 1.0 (done) | `docker run --rm hello-world` works (confirmed 2026-11-23) |
-| 0 | **Scaffold + compose + logging**: repo, full compose stack from 3.11 (db, redis, migrate, api, web, logs, info) with healthchecks and `depends_on` ordering, `.env.example`, `db/init/`, FastAPI hello + `/healthz`, Next.js + shadcn + Tailwind (standalone build under `pm2-runtime` cluster mode, own `/healthz`), Alembic wired, Makefile, lint/format config, JSON request-logging middleware and error handler, Dozzle names and groups plus PM2 JSON logs (3.10), banner skeleton, security headers with the CSP nonce middleware, non-root containers, Postgres roles (3.15), gzip on the API with SSE excluded (3.16) | 3.25 | Clean `docker compose up` starts every service in order and prints the banner: web `:3000` with 2 PM2 workers, API `:8000`, docs `:8000/docs`, logs `127.0.0.1:8080`, Postgres `127.0.0.1:5432`, Redis `127.0.0.1:6379`; backend and frontend appear as separate Dozzle streams |
-| 1 | **Rules module + clock + tests** (pure code first, no DB): section 3.4 functions, week/DST math, rounding | 1.5 | Rule tests green, including every row of section 4 |
-| 2 | **Schema, migrations, seed, connections**: tables, constraints, triggers and indexes from `docs/DB_SCHEMA.md`, idempotent `seed.py` (inserts missing rows by seed id with `ON CONFLICT DO NOTHING`, never overwrites edits; `--reset` truncates first), keep seed ids, banner fills its user table from the DB, engine and pool lifecycle with application names (3.12), Redis client lifecycle, `teams.cache_version`, seed bumps the cache generation (3.14) | 2.0 | Fresh DB seeds twice with identical state; restarting the stack keeps edits made in the app; `pg_stat_activity` shows the expected `application_name`s |
-| 3 | **Rules report** command + committed `rules_report.json`. The command resets and seeds its own scratch database (`eos_report`) before computing, so clicks in the demo app never change its output | 0.5 | Output matches section 4 oracles. Done early: it is graded hard and de-risks the rules |
-| 4 | **API + authz + cache + security**: session, teams, owners, scorecard, scores, make-issue, issues, To-Dos, rocks; Redis cache-aside for every item in 3.14, with Postgres-stamped versions and the stampede guard; CSRF, `Origin`, content-type and body-size guards and rate limiting (3.15) | 4.5 | OpenAPI complete and matching `docs/API_CONTRACTS.md` (its seed examples become API tests); route-table authz test green; 20-way concurrent make-issue returns one Issue; cache tests green, and the API suite gives identical results with `CACHE_ENABLED=false`; security tests green |
-| 5 | **Meeting backend + snapshot + multi-worker**: start, join, advance, end, rating, SSE hub, `LISTEN/NOTIFY` fan-out with reconnect, shared clock anchor, `meeting_summaries` (incl. seeded snapshots) | 3.0 | Two `curl` clients on two different API processes see the same section changes in under 1 s; refresh and reconnect restore state; summary of an ended meeting does not change after a later score edit |
-| 6 | **Frontend** (structure in 3.17): login switcher, team switcher, Team page (Scorecard, Issues, To-Dos, Rocks) as Server Components streamed per section, Server Actions with zod, client islands only where needed, generated API types. **Meeting page**: agenda, big timer with over-time state, attendees, reused Scorecard and Issues, Conclude (new To-Dos, rating), server-rendered summary, `LiveRefresher` | 3.0 | Full core journey clickable as Team Member, read-only as Observer, and two browsers stay in sync |
-| 7 | **E2E + test polish**: Playwright with two contexts, fixture and clock note, failure trace artifact, single `make test` | 1.25 | Unattended run green from a clean clone |
-| 8 | **Docs and video**: README (2 pages), DECISIONS.md (1 page), 7-min video, link check from a logged-out window | 1.25 | Submission email ready |
+| P | **Prerequisite: Docker setup** (section 0) | done | `docker run --rm hello-world` works (confirmed 2026-11-23) |
+| 0 | **Lean scaffold**: repo, compose with `db`, `migrate`, `api`, `web`, `logs` (plain Dozzle) and `info` (banner skeleton), `.env.example`, `db/init/`, FastAPI hello + `/healthz`, Next.js + shadcn + Tailwind standalone build (plain `node server.js`), Alembic wired, Makefile, lint/format config, JSON request logging and error handler | 1.5 | Clean `docker compose up` prints the banner: web `:3000`, API `:8000`, docs `:8000/docs`, logs `127.0.0.1:8080`, Postgres `127.0.0.1:5432` |
+| 1 | **Rules module + clock + tests** (pure code, no DB): section 3.4 functions, week and DST maths, rounding | 1.5 | Rule tests green, including every row of section 4 |
+| 2 | **Schema, migrations, seed, connections**: everything in `docs/DB_SCHEMA.md` except the bonus objects (tables, constraints, role triggers, indexes, `teams.cache_version`, `clock_anchor`), least-privilege roles, idempotent seed (`ON CONFLICT DO NOTHING`, `--reset`), banner user table from the DB, pool lifecycle with application names (3.12) | 2.0 | Fresh DB seeds twice with identical state; app edits survive a restart; `pg_stat_activity` shows the expected `application_name`s; `eos_app` cannot run DDL |
+| 3 | **Rules report**: command with its own scratch database (`eos_report`), committed `rules_report.json` | 0.5 | Output matches the section 4 oracles. Early on purpose: graded hard, and it de-risks the rules |
+| 4 | **API + authz + core security**: every endpoint in `docs/API_CONTRACTS.md` except the bonus activity endpoint, authz policy with the route-table test, Make it an Issue concurrency, validation and mass-assignment limits, session cookie, CSRF (custom header + `Origin`), JSON-only writes, body limit, basic security headers, `cache_version` bump first in every team write | 3.0 | Contract examples pass as API tests; route-table authz test green; 20-way concurrent Make it an Issue returns one Issue; CSRF and validation tests green |
+| 5 | **Meetings + real-time**: start, join, advance, end, rating, frozen snapshots (including the seeded ones), team SSE stream with `NOTIFY` fan-out and reconnect, clock anchor | 2.5 | Two `curl` clients follow a meeting in under 1 s; refresh and reconnect restore state; an ended summary doesn't change after later edits; SSE survives a 2-minute idle through the Next proxy |
+| 6 | **Frontend** (3.17): login switcher, team switcher, Team page as streamed Server Components, Server Actions with zod, client islands only where needed, Meeting page with timer and facilitator controls, summary page, `LiveRefresher` | 3.0 | Full journey clickable as Team Member, read-only as Observer, two browsers in sync |
+| 7 | **E2E + test polish**: two-browser Playwright test, SSR check, XSS check, contract drift check, failure trace artifact, single `make test` | 1.25 | Unattended run green from a clean clone. **Graded core complete** |
+
+### Platform layers (~4.0 h, each behind a switch)
+
+| # | Layer | Hours | Exit criteria |
+|---|---|---|---|
+| L1 | **Multi-worker API** (3.13): `API_WORKERS=2`, deterministic cross-worker fan-out test, E2E rerun with 2 workers | 0.5 | Cross-worker test and E2E green |
+| L2 | **PM2 cluster for web** (3.11): `pm2-runtime`, `ecosystem.config.js`, JSON logs with worker ids | 0.5 | Banner shows `pm2 cluster x2`; E2E green with 2 web workers |
+| L3 | **Redis cache** (3.14): `redis` service, client lifecycle, demo-seed generation bump, cache-aside for every listed item, stampede guard, cache tests, API suite rerun with the cache off | 1.75 | Cache tests green; identical results with `CACHE_ENABLED=false` |
+| L4 | **Security extras** (3.15): nonce CSP middleware, Redis-backed rate limits (needs L3's Redis), non-root and read-only containers, dependency audit | 0.75 | Header and rate-limit tests green; audit results noted for the README |
+| L5 | **Observability polish** (3.10, 3.12, 3.16): Dozzle names and groups, PM2 and Uvicorn worker tags, pool leak watch and connection-budget warning, API gzip with SSE excluded | 0.5 | Backend and frontend as separately named Dozzle streams; gzip on; SSE still unbuffered |
+
+### Wrap-up (~1.25 h)
+
+| # | Phase | Hours | Exit criteria |
+|---|---|---|---|
+| 8 | **Docs and video**: README (2 pages), `docs/DECISIONS.md` (1 page), 7-minute video, link check from a logged-out window | 1.25 | Submission sent |
+
+Total: 15.25 + 4.0 + 1.25 = **20.5 h** (the reorder adds ~0.25 h for wiring the switches).
+
+### Layer switches
+
+| Layer | Switch, default once built | When off |
+|---|---|---|
+| L1 | `API_WORKERS=2` | One Uvicorn worker; `NOTIFY` and the clock anchor work unchanged |
+| L2 | `WEB_RUNNER=pm2`, `WEB_INSTANCES=2` | Plain `node server.js` |
+| L3 | `CACHE_ENABLED=true` | Every read goes to Postgres |
+| L4 | `CSP_MODE=nonce`, `RATE_LIMIT_ENABLED=true`, `READ_ONLY_FS=true` | Basic headers, no rate limits, writable filesystem |
+| L5 | `GZIP_ENABLED=true`, `LOG_WORKER_TAGS=true`, `POOL_LEAK_WATCH=true` | Plain logs, no gzip |
+
+Whatever ships switched off is listed in the README's known limitations. Shipping a layer off needs your OK at the time (section 9).
 
 If phase 6 runs long, shrink styling, not behavior.
 
@@ -984,31 +1022,31 @@ One documented command (`make test`, with the plain `docker compose run ...` equ
 
 ---
 
-## 7. Schedule (re-cut 2026-11-24, decisions 6 and 22)
+## 7. Schedule (re-cut 2026-11-24, decisions 6, 22 and 31)
 
-Monday went to planning and the Docker setup; no build work happened. The remaining core is now ~20.25 h.
-
-**Chosen (decision 22): 4 h days Tue to Fri.** Security hardening and gzip (decisions 23 and 24) grew Saturday from 2.5 h to ~4.25 h, and the frontend now spans Friday and Saturday. Request signing is a bonus and is not in this table. The rejected alternative was 3 h days with a much longer Saturday.
+Monday went to planning and the Docker setup; no build work happened. The remaining work is ~20.5 h, in the order of section 5: graded core Tuesday to Friday, platform layers and the submission on Saturday.
 
 | Day | Hours | Phases | End-of-day check |
 |---|---|---|---|
-| Tue 11-24 | 4.0 | Phase 0 (3.25). Start Phase 1 (0.75) | Banner prints; Redis up; separate Dozzle streams; security headers and gzip present |
-| Wed 11-25 | 4.0 | Finish Phase 1 (0.75). Phase 2 (2.0). Phase 3 (0.5). Start Phase 4 (0.75) | Rule tests green; `rules_report.json` matches the section 4 oracles |
-| Thu 11-26 | 4.0 | Finish Phase 4 (3.75). Start Phase 5 (0.25) | **Checkpoint:** API, authz, concurrency, cache and security tests green |
-| Fri 11-27 | 4.0 | Finish Phase 5 (2.75). Start Phase 6 (1.25) | Two API processes stay in sync |
-| Sat 11-28 | 4.25 | Finish Phase 6 (1.75). Phase 7 (1.25). Phase 8 (1.25). **Submit** | Submission sent |
-| **Total** | **20.25** | | |
+| Tue 11-24 | 4.0 | Phase 0 (1.5). Phase 1 (1.5). Start Phase 2 (1.0) | Banner prints; rule tests green |
+| Wed 11-25 | 4.0 | Finish Phase 2 (1.0). Phase 3 (0.5). Start Phase 4 (2.5) | `rules_report.json` matches the section 4 oracles |
+| Thu 11-26 | 4.0 | Finish Phase 4 (0.5). Phase 5 (2.5). Start Phase 6 (1.0) | **Checkpoint:** API, authz, concurrency and CSRF tests green; two `curl` clients follow a meeting |
+| Fri 11-27 | 4.0 | Finish Phase 6 (2.0). Phase 7 (1.25). L1 (0.5). Start L2 (0.25) | **Graded core complete:** full journey in two browsers, `make test` green from a clean clone |
+| Sat 11-28 | 4.5 | Finish L2 (0.25). L3 (1.75). L4 (0.75). L5 (0.5). Phase 8 (1.25). **Submit** | Submission sent |
+| **Total** | **20.5** | | |
+
+**Saturday guard:** start Phase 8 (docs and video) no later than 2.5 h before your planned send time, whatever layer is in progress. An unfinished layer then ships switched off and is listed in the README (with your OK at the time). Docs and the video are required deliverables; layers are not.
 
 Ways to claw time back, in order of preference:
 
-1. **Pre-approved cuts** (section 9 items 1 and 2: UI polish, pool extras), saving about 0.5 to 0.75 h. Applied automatically if the checkpoint fails.
-2. **Last-resort cuts** (section 9 items 3 to 5: one API worker, describe-only snapshot, no team read-model cache), saving about 2.25 h together. Each needs your OK.
+1. **Pre-approved cuts** (section 9 items 1 and 2: UI polish, pool extras), saving about 0.5 to 0.75 h. Applied automatically if a checkpoint fails.
+2. **Last-resort cuts** (section 9 items 3 and 4: ship a layer switched off, describe-only snapshot). Each needs your OK.
+
+**Checkpoint rule:** if Thursday's checkpoint fails, apply the pre-approved cuts at once. If the graded core isn't complete by Friday night, Saturday goes to finishing it first and the layers wait; decide which layers ship switched off that evening, not on Saturday afternoon.
 
 **Deadline in local time:** 11:59 PM EST Saturday is 04:59 UTC on Sunday 11-29. If you are on Bangladesh time (UTC+6; Google Drive showed BDT pricing), that is **10:59 AM Sunday**, so Saturday night is real slack. Still aim to submit Saturday evening your time, and don't count on Sunday morning.
 
 **US Thanksgiving is Thursday 11-26**, and many US teams are off Friday too. Altri sets its deadlines in EST, so if you need to email them a question, send it by Wednesday or expect a slow reply.
-
-**Checkpoint rule:** if Thursday's checkpoint fails, apply the pre-approved cuts at once and decide on last-resort cuts that evening, not on Saturday.
 
 Video rehearsal: log in as `u1` (Avery Admin) in one window and `u3` (Casey Cho) in a second, start the meeting, make `m1` week 11-02 an Issue (returns the existing `i5`, a live demo of dedupe), solve an Issue with a To-Do, advance to Conclude, rate, end, show the summary. Spend the last 2 minutes on decisions. Optionally flash the Dozzle view to show request logs and the `request_id` trail.
 
@@ -1033,20 +1071,21 @@ Video rehearsal: log in as `u1` (Avery Admin) in one window and `u3` (Casey Cho)
 | Activity outbox grows or bloats while the activity worker is down (bonus) | API unaffected; worker catches up on restart; aggressive autovacuum on the outbox; `/healthz` backlog warning after 5 minutes (3.18) |
 | Missed real-time events when a worker's `LISTEN` connection drops | Reconnect loop, then local clients refetch their snapshot (3.12 item 3); events are hints, the DB is the truth |
 | `router.refresh()` too slow for the ~1 s sync target with several attendees | Debounce bursts; apply `meeting.state` to the timer and stepper client-side at once; Redis-cached FastAPI reads and PM2 workers keep renders cheap; measure in Phase 6. Fallback: send the changed section's data in the event and update it client-side (3.17) |
-| Nonce-based CSP breaks Next.js pages or shadcn components | Set it up in Phase 0 while the app is tiny; documented fallback `script-src 'self' 'unsafe-inline'` (3.15) |
-| Over budget (core ~20.25 h left) | Checkpoint rule in section 7; ranked bonuses; cut order in section 9 |
+| Nonce-based CSP breaks Next.js pages or shadcn components | Built late as layer L4, behind `CSP_MODE`; if it breaks pages, ship `CSP_MODE=basic` with the documented fallback `script-src 'self' 'unsafe-inline'` (3.15) |
+| Writes in one team queue on the `teams.cache_version` row, or deadlock | The bump is always the first statement of a team write (consistent lock order); transactions are short; the concurrency test fires 20 parallel writes at one team (3.14) |
+| A platform layer destabilizes a working app late on Saturday | Every layer is behind a switch (section 5); E2E reruns after each layer; the Saturday guard starts docs and video on time regardless |
+| Over budget (~20.5 h left) | Graded core first and layers last (section 5); checkpoint rule and Saturday guard in section 7; ranked bonuses; cut order in section 9 |
 
 ## 9. Cut line and bonus ranking
 
-**Core (must ship):** sections 2, 3.1 to 3.14, the rules report, the three test layers, README, decision record, video.
+**Core (must ship):** sections 2, 3.1 to 3.15, the gzip part of 3.16, and 3.17; the rules report; every test layer in section 6; README, decision record, video. Request signing (3.16) and the activity log (3.18) are bonus. Build order and layer switches: section 5.
 
 **If behind, cut in this order:**
 
-1. UI polish and animations
-2. Pool extras: leak-watch logging and the connection-budget startup warning (3.12 items 6 and 7 beyond the basic `/healthz`)
-3. Only as a last resort: `API_WORKERS=1`, which makes `LISTEN/NOTIFY` and the clock anchor optional again (needs your OK, since it undoes decision 16)
+1. UI polish and animations (pre-approved)
+2. Pool extras: the leak-watch logging (3.12 lifecycle item 7) and the connection-budget startup warning (pre-approved)
+3. Only as a last resort: ship an unfinished platform layer (L1 to L5, section 5) switched off and listed in the README. Needs your OK, since each layer is one of your decisions (14, 16, 18 to 21, 23)
 4. Only as a last resort: meeting snapshot back to describe-only (needs your OK, since you chose to implement it)
-5. Only as a last resort: drop the team read-model cache and keep Redis for reference data and summaries, saving about 1 h (needs your OK, since it undoes part of decision 21)
 
 **Never cut:** authz tests, the concurrency test, the two-browser E2E, the rules report.
 
