@@ -16,7 +16,13 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff==0.17.6",
+    "pytest==9.2.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
 
 [tool.uv]
 package = false

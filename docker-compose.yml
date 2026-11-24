@@ -55,6 +55,7 @@ services:
   migrate:
     build:
       context: ./backend
+      target: runtime
     image: eos-backend:local
     command: ["sh", "-c", "alembic upgrade head && python -m app.seed"]
     environment: *backend-env
@@ -121,6 +122,25 @@ services:
       web:
         condition: service_healthy
     restart: "no"
+
+  # Test runner (plan section 6). Only starts on demand:
+  #   docker compose run --rm tests                 (everything)
+  #   docker compose run --rm tests pytest tests/rules
+  # The backend source is mounted, so tests always run against the working tree.
+  tests:
+    profiles: ["test"]
+    build:
+      context: ./backend
+      target: test
+    image: eos-backend-test:local
+    environment:
+      APP_ENV: test
+      APP_NOW: 2026-11-11T15:00:00Z
+      APP_CLOCK_MODE: frozen
+      SEED_PATH: /seed/seed.json
+    volumes:
+      - ./backend:/app
+      - ./seed:/seed:ro
 
 volumes:
   pgdata:

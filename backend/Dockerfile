@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.12.16-slim-bookworm
+FROM python:3.12.16-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -14,8 +14,18 @@ WORKDIR /app
 
 # Dependencies first, so code edits don't invalidate this layer.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
 
+
+# Test image: runtime + dev dependencies (pytest, ruff). Used by the `tests` compose
+# service; listed before `runtime` so a plain build still produces the runtime image.
+FROM base AS test
+RUN uv sync --frozen --no-install-project
+COPY . .
+CMD ["pytest"]
+
+
+FROM base AS runtime
+RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 
 # The seed file lives at the repo root; compose mounts it read-only at /seed.

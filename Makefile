@@ -1,6 +1,6 @@
 # Convenience targets. Every target is a plain docker compose command, listed in the
 # README too, so nothing here is required (Windows has no make by default).
-.PHONY: up down reset build logs info lint
+.PHONY: up down reset build logs info lint test
 
 # Not `up --wait`: it fails whenever the one-shot `info` container has already exited.
 # `info` only starts once api and web are healthy, so waiting for it is the readiness check.
@@ -20,6 +20,9 @@ build:         ## rebuild images
 
 logs:          ## follow all logs (Dozzle at http://localhost:8080 is nicer)
 	docker compose logs -f
+
+test:          ## run the test suite in the test container (APP_NOW frozen at the seed's now)
+	docker compose run --rm tests
 
 info:          ## print the startup banner again
 	docker compose logs --no-log-prefix info
