@@ -1,0 +1,122 @@
+# `docker compose up` from a clean clone: builds, migrates, seeds and prints a banner
+# with every endpoint (plan 3.11). All credentials are dev-only defaults; override in .env.
+name: eos
+
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV:-development}
+  APP_NOW: ${APP_NOW:-2026-11-11T15:00:00Z}
+  APP_CLOCK_MODE: ${APP_CLOCK_MODE:-ticking}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  LOG_PAYLOADS: ${LOG_PAYLOADS:-true}
+  DATABASE_URL: postgresql+asyncpg://eos_app:${EOS_APP_PASSWORD:-eos_app_dev_pw}@db:5432/eos
+  OWNER_DATABASE_URL: postgresql+asyncpg://eos_owner:${EOS_OWNER_PASSWORD:-eos_owner_dev_pw}@db:5432/eos
+  READONLY_DATABASE_URL: postgresql+asyncpg://eos_readonly:${EOS_READONLY_PASSWORD:-eos_readonly_dev_pw}@db:5432/eos
+  SESSION_SECRET: ${SESSION_SECRET:-dev-only-session-secret-change-me-0000000000000000}
+  WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+  PUBLIC_HOST: ${PUBLIC_HOST:-localhost}
+  WEB_PORT: ${WEB_PORT:-3000}
+  API_PORT: ${API_PORT:-8000}
+  DB_PORT: ${DB_PORT:-5433}
+  LOGS_PORT: ${LOGS_PORT:-8080}
+  API_WORKERS: ${API_WORKERS:-1}
+  SEED_PATH: /seed/seed.json
+
+x-backend-build: &backend-build
+  context: ./backend
+
+services:
+  db:
+    image: postgres:17.12-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev_pw}
+      POSTGRES_DB: postgres
+      EOS_OWNER_PASSWORD: ${EOS_OWNER_PASSWORD:-eos_owner_dev_pw}
+      EOS_APP_PASSWORD: ${EOS_APP_PASSWORD:-eos_app_dev_pw}
+      EOS_READONLY_PASSWORD: ${EOS_READONLY_PASSWORD:-eos_readonly_dev_pw}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    healthcheck:
+      # TCP on purpose: during first-time init Postgres only listens on its socket.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d eos"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  migrate:
+    build: *backend-build
+    image: eos-backend:local
+    command: ["sh", "-c", "alembic upgrade head && python -m app.seed"]
+    environment: *backend-env
+    volumes:
+      - ./seed:/seed:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: *backend-build
+    image: eos-backend:local
+    environment: *backend-env
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200 else 1)"
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        API_INTERNAL_URL: http://api:8000
+    image: eos-frontend:local
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+
+  logs:
+    image: amir20/dozzle:v11.5.0
+    volumes:
+      # Read-only mount, but the Docker API itself isn't limited by :ro (plan 3.10).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:${LOGS_PORT:-8080}:8080"
+
+  info:
+    build: *backend-build
+    image: eos-backend:local
+    command: ["python", "-m", "app.banner"]
+    environment: *backend-env
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  pgdata:

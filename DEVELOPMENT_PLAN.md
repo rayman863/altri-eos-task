@@ -27,6 +27,7 @@ Built from the assessment brief, the seed README, the seed data (`seed.json`) an
 
 ### Revision log
 
+- **v17 (2026-11-25):** **Phase 0 done** (decision 32). Stack verified with `docker compose up`. Implementation notes folded in: pinned versions, Next 16's `proxy.ts` (was `middleware.ts`), Cache Components off, Postgres host port 5433 (a local Postgres owns 5432 on the dev machine).
 - **v16 (2026-11-24):** review pass (decision 31). Build reordered: graded core first (Phases 0 to 7), then platform layers L1 to L5 behind switches, then docs and video; schedule re-cut with a Friday "graded core complete" check and a Saturday guard. Seven seams fixed: team-row lock order, section 9 core scope, signing placement after the server-first rewrite, `meeting.state` wording, Redis-free seeding for tests and the report, cut-list reference, activity triggers in test and report databases.
 - **v15 (2026-11-24):** activity log now captures every data table through a generic trigger (decision 30), with actor context from transaction-local settings, a noise filter and a coverage test; the Admin page gets 9 filters, full-text search and commit-style grouping. Bonus estimate ~5.5 h.
 - **v14 (2026-11-24):** activity log (3.18, decisions 28 and 29) replaces the audit-trail bonus: separate `eos_activity` database, transactional outbox, background worker for writes and reads, Admin-only `/admin/activity` page with git-style diffs. Schema doc, API contracts, compose, connections, roles and frontend routes updated.
@@ -110,6 +111,7 @@ Prerequisite complete. Section 0 no longer blocks Phase 0.
 | 29 | New request: activity UI as its own Admin-only page with a git-like before/after diff per activity | **`/admin/activity`, server-rendered, field-level `-`/`+` diff lines plus word-level diff for long text, expandable per event** | Section 3.18; included in the ~4 h |
 | 30 | New request: log all data tables of the main database; filters and search on the activity page | **One generic `SECURITY DEFINER` row trigger (plus a truncate trigger) on every data table writes the outbox; actor and request context passed as transaction-local settings. Page gets 9 filters, full-text search with `websearch` syntax and highlighting, and transaction grouping like git commits** | Section 3.18 rewritten. Bonus estimate 4 h to ~5.5 h |
 | 31 | Plan review: fix the seams and reorder the build | **Graded core first (Phases 0 to 7), then platform layers L1 to L5 behind config switches, then docs and video. Seven fixes: team-row lock order, core scope in section 9, signing in the server-side client, `meeting.state` wording, seed without Redis for tests and the report, cut-list reference, activity triggers in test and report databases** | Sections 5 and 7 rewritten; 3.14, 3.15, 3.16, 3.18, 8, 9 and `docs/DB_SCHEMA.md` fixed. ~20.5 h left, Saturday ~4.5 h |
+| 32 | Phase 0 build findings (2026-11-25) | **Pinned versions:** `postgres:17.12-alpine`, `python:3.12.16-slim-bookworm`, `node:24.22.3-alpine`, `amir20/dozzle:v11.5.0`, Next 16.4.6, React 19.3, shadcn 4.23 (Radix base), FastAPI 0.165.0, SQLAlchemy 2.1.9, asyncpg 0.32.0, Alembic 1.20.1, uv 0.13.9. **Next 16:** `middleware.ts` is now `proxy.ts`; `next.config` is read at build time, so the API address is a build argument; Cache Components turned off to keep classic dynamic rendering. **Postgres host port 5433** by default, because a local Windows `postgresql-x64-17` service owns 5432 | Plan sections 3.1, 3.11, 3.15, 3.17 and 11 updated. Phase 0 exit criteria all verified |
 
 ---
 
@@ -156,7 +158,7 @@ altri-eos-task/
     alembic/versions/
     alembic_activity/versions/  # bonus: eos_activity migrations
     tests/{rules,api}/
-  frontend/                   # Next.js App Router, standalone build, ecosystem.config.js for pm2-runtime, middleware.ts (CSP nonce)
+  frontend/                   # Next.js App Router, standalone build, ecosystem.config.js for pm2-runtime, proxy.ts (CSP nonce; Next 16 renamed middleware.ts to proxy.ts)
   e2e/                        # Playwright, two browser contexts
 ```
 
@@ -295,7 +297,7 @@ One command from a clean clone builds the images, starts everything, migrates, s
 
 | Service | Image | Host port (default, override in `.env`) | Purpose | Ready when |
 |---|---|---|---|---|
-| `db` | `postgres` (pinned tag) | `127.0.0.1:5432` (`DB_PORT`) | Postgres, data in a named volume | `pg_isready` healthcheck |
+| `db` | `postgres` (pinned tag) | `127.0.0.1:5433` (`DB_PORT`) | Postgres, data in a named volume | `pg_isready` healthcheck |
 | `redis` | `redis` (pinned tag) | `127.0.0.1:6379` (`REDIS_PORT`) | Cache only, no persistence, LRU at 128 MB (3.14) | `redis-cli ping` healthcheck |
 | `migrate` | api image | none | One-shot: `alembic upgrade head`, then `python -m app.seed`, then exits `0` | `service_completed_successfully` |
 | `api` | `backend/Dockerfile` | `8000` (`API_PORT`) | FastAPI run by **Uvicorn with `API_WORKERS` processes** (default 2, 3.13). API docs at `/docs` (Swagger UI) and `/redoc`, schema at `/openapi.json` | `GET /healthz` returns OK (also checks the DB pool) |
@@ -317,7 +319,7 @@ info-1  |  API (FastAPI)   http://localhost:8000    uvicorn x2
 info-1  |  API docs        http://localhost:8000/docs    ReDoc: /redoc
 info-1  |  Logs (Dozzle)   http://localhost:8080
 info-1  |  Activity worker internal only, outbox backlog 0   (bonus)
-info-1  |  Postgres        postgresql://eos:eos_dev_pw@localhost:5432/eos
+info-1  |  Postgres        postgresql://eos:eos_dev_pw@localhost:5433/eos
 info-1  |  Redis (cache)   redis://localhost:6379
 info-1  | --------------------------------------------------------------
 info-1  |  Sign in: open the app and pick a user (no passwords)
@@ -344,7 +346,7 @@ Notes:
 - **Banner visibility:** attached `docker compose up` interleaves every service's logs. The banner appears once everything is healthy, but request logs keep scrolling after it. So also: `docker compose logs info` (or `make info`) any time, and `make up` = `docker compose up -d --wait` followed by the banner on a clean screen.
 - **Less noise above the banner:** quiet log levels for `db` and `logs`, `NEXT_TELEMETRY_DISABLED=1` for `web`.
 - **Port binding:** Postgres, Redis and Dozzle bind to 127.0.0.1 only. `web` and `api` also default to 127.0.0.1; `BIND_ADDR=0.0.0.0` in `.env` opens them to the LAN (for example to join a meeting from a phone).
-- **Port clashes** (say a local Postgres already on 5432): change `DB_PORT` in `.env`; the banner prints whatever is in use.
+- **Port clashes:** the host port for Postgres defaults to **5433**, not 5432, because a local Postgres often already owns 5432 (it does on the dev machine: a Windows `postgresql-x64-17` service). Any other clash: change the port in `.env`; the banner prints whatever is in use.
 - **First run** builds the images and takes a few minutes; later runs start in seconds.
 - **PM2 cluster mode for `web` (decision 14):**
   - `frontend/ecosystem.config.js`: `script: 'server.js'` (from Next's `output: 'standalone'`), `exec_mode: 'cluster'`, `instances: process.env.WEB_INSTANCES || 2`, `autorestart: true`, `max_memory_restart`, `kill_timeout` for graceful shutdown. Workers share port 3000 through Node's cluster module. `HOSTNAME=0.0.0.0` inside the container.
@@ -538,7 +540,7 @@ Writes must also be `Content-Type: application/json` (`415` otherwise), which a 
 
 | Where | Headers |
 |---|---|
-| `web` | `Content-Security-Policy` with a per-request nonce set in Next.js middleware: `default-src 'self'; script-src 'self' 'nonce-<n>' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'` |
+| `web` | `Content-Security-Policy` with a per-request nonce set in the Next.js `proxy.ts` (formerly middleware): `default-src 'self'; script-src 'self' 'nonce-<n>' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'` |
 | `web` | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, `Permissions-Policy: camera=(), microphone=(), geolocation=()` |
 | `api` | `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on authenticated responses |
 
@@ -634,7 +636,7 @@ flowchart LR
         RT["LiveRefresher<br/>one EventSource per team"]
     end
     subgraph NextJS ["Next.js server, PM2 cluster"]
-        MW["middleware.ts<br/>CSP nonce, session cookie check"]
+        MW["proxy.ts<br/>CSP nonce, session cookie check"]
         RSC["Server Components<br/>fetch data, render sections"]
         SA["Server Actions<br/>every write"]
         PX["api proxy<br/>SSE and direct API calls"]
@@ -676,7 +678,7 @@ flowchart LR
 | `/healthz` | Route handler | Container healthcheck (3.11) |
 | `/api/*` | `next.config` rewrite (core) or route handler (signing bonus, 3.16) | Proxy to FastAPI, used for the SSE stream and for direct API calls |
 
-**Auth gate (server):** `middleware.ts` sets the CSP nonce and redirects to `/login` when there is no session cookie at all. The `(app)` layout fetches `/me`; `401` redirects to `/login`. The `teams/[teamId]` layout fetches the team: `403` renders a "You don't have access to this team" page, `404` calls `notFound()`. Guessed team URLs fail in the UI exactly as they do in the API.
+**Auth gate (server):** `proxy.ts` (Next 16's name for middleware) sets the CSP nonce and redirects to `/login` when there is no session cookie at all. The `(app)` layout fetches `/me`; `401` redirects to `/login`. The `teams/[teamId]` layout fetches the team: `403` renders a "You don't have access to this team" page, `404` calls `notFound()`. Guessed team URLs fail in the UI exactly as they do in the API.
 
 **Reading data (server):**
 
@@ -949,7 +951,7 @@ Also: `m5` has a score in the **current** week but gaps in two closed weeks, so 
 | # | Phase | Hours | Exit criteria |
 |---|---|---|---|
 | P | **Prerequisite: Docker setup** (section 0) | done | `docker run --rm hello-world` works (confirmed 2026-11-23) |
-| 0 | **Lean scaffold**: repo, compose with `db`, `migrate`, `api`, `web`, `logs` (plain Dozzle) and `info` (banner skeleton), `.env.example`, `db/init/`, FastAPI hello + `/healthz`, Next.js + shadcn + Tailwind standalone build (plain `node server.js`), Alembic wired, Makefile, lint/format config, JSON request logging and error handler | 1.5 | Clean `docker compose up` prints the banner: web `:3000`, API `:8000`, docs `:8000/docs`, logs `127.0.0.1:8080`, Postgres `127.0.0.1:5432` |
+| 0 | **Lean scaffold**: repo, compose with `db`, `migrate`, `api`, `web`, `logs` (plain Dozzle) and `info` (banner skeleton), `.env.example`, `db/init/`, FastAPI hello + `/healthz`, Next.js + shadcn + Tailwind standalone build (plain `node server.js`), Alembic wired, Makefile, lint/format config, JSON request logging and error handler | 1.5 | Clean `docker compose up` prints the banner: web `:3000`, API `:8000`, docs `:8000/docs`, logs `127.0.0.1:8080`, Postgres `127.0.0.1:5433` |
 | 1 | **Rules module + clock + tests** (pure code, no DB): section 3.4 functions, week and DST maths, rounding | 1.5 | Rule tests green, including every row of section 4 |
 | 2 | **Schema, migrations, seed, connections**: everything in `docs/DB_SCHEMA.md` except the bonus objects (tables, constraints, role triggers, indexes, `teams.cache_version`, `clock_anchor`), least-privilege roles, idempotent seed (`ON CONFLICT DO NOTHING`, `--reset`), banner user table from the DB, pool lifecycle with application names (3.12) | 2.0 | Fresh DB seeds twice with identical state; app edits survive a restart; `pg_stat_activity` shows the expected `application_name`s; `eos_app` cannot run DDL |
 | 3 | **Rules report**: command with its own scratch database (`eos_report`), committed `rules_report.json` | 0.5 | Output matches the section 4 oracles. Early on purpose: graded hard, and it de-risks the rules |
@@ -1125,7 +1127,7 @@ Any bonus item not built gets a two-line "how I would do it" note in the decisio
 
 ## 11. Definition of done
 
-- [ ] `docker compose up` from a clean clone: migrations and seed run automatically, the banner prints endpoints and users; web `:3000`, API `:8000`, docs `:8000/docs`, logs `127.0.0.1:8080`, Postgres `127.0.0.1:5432`, Redis `127.0.0.1:6379`
+- [ ] `docker compose up` from a clean clone: migrations and seed run automatically, the banner prints endpoints and users; web `:3000`, API `:8000`, docs `:8000/docs`, logs `127.0.0.1:8080`, Postgres `127.0.0.1:5433`, Redis `127.0.0.1:6379`
 - [ ] Seed script rerun leaves state unchanged
 - [ ] Security tests green; headers checked in the browser; `pip-audit` and `npm audit` results noted in the README
 - [ ] `make test` (and its raw command) green, unattended

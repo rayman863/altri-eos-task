@@ -3,3 +3,30 @@
 
 # Claude Code local settings and state
 .claude/
+
+# Local environment overrides (defaults live in .env.example)
+.env
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Test output (the one committed trace lives in artifacts/)
+test-results/
+playwright-report/
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
