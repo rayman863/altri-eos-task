@@ -2,7 +2,7 @@
 
 import asyncio
 
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -26,10 +26,26 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# The default privileges from db/init give eos_app data access to every table eos_owner
+# creates, which would include Alembic's own bookkeeping table. The API must never be
+# able to change the recorded revision, so take that back after every upgrade.
+_PROTECT_VERSION_TABLE = """
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eos_app')
+     AND to_regclass('public.alembic_version') IS NOT NULL THEN
+    REVOKE ALL ON TABLE public.alembic_version FROM eos_app;
+  END IF;
+END
+$$;
+"""
+
+
 def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()
+        connection.execute(text(_PROTECT_VERSION_TABLE))
 
 
 async def run_async_migrations() -> None:

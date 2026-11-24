@@ -6,7 +6,11 @@ export const dynamic = "force-dynamic";
 async function apiStatus(): Promise<string> {
   const base = process.env.API_INTERNAL_URL ?? "http://api:8000";
   try {
-    const res = await fetch(`${base}/healthz`, { cache: "no-store" });
+    // Bounded wait: a stuck API must not hang the page (or a Next.js worker).
+    const res = await fetch(`${base}/healthz`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(2000),
+    });
     const body = (await res.json()) as { status?: string; db?: string };
     return `api ${body.status ?? "?"}, db ${body.db ?? "?"}`;
   } catch {

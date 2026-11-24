@@ -8,6 +8,7 @@ x-backend-env: &backend-env
   APP_CLOCK_MODE: ${APP_CLOCK_MODE:-ticking}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   LOG_PAYLOADS: ${LOG_PAYLOADS:-true}
+  TRUSTED_PROXY_HOSTS: ${TRUSTED_PROXY_HOSTS:-web}
   DATABASE_URL: postgresql+asyncpg://eos_app:${EOS_APP_PASSWORD:-eos_app_dev_pw}@db:5432/eos
   OWNER_DATABASE_URL: postgresql+asyncpg://eos_owner:${EOS_OWNER_PASSWORD:-eos_owner_dev_pw}@db:5432/eos
   READONLY_DATABASE_URL: postgresql+asyncpg://eos_readonly:${EOS_READONLY_PASSWORD:-eos_readonly_dev_pw}@db:5432/eos
@@ -21,8 +22,14 @@ x-backend-env: &backend-env
   API_WORKERS: ${API_WORKERS:-1}
   SEED_PATH: /seed/seed.json
 
-x-backend-build: &backend-build
-  context: ./backend
+# Healthchecks probe every 2 s while a service starts (so `up` is quick), then every
+# 30 s once it's healthy (so probes don't flood the logs).
+x-healthcheck-timing: &healthcheck-timing
+  start_period: 60s
+  start_interval: 2s
+  interval: 30s
+  timeout: 3s
+  retries: 3
 
 services:
   db:
@@ -42,12 +49,12 @@ services:
     healthcheck:
       # TCP on purpose: during first-time init Postgres only listens on its socket.
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d eos"]
-      interval: 3s
-      timeout: 3s
-      retries: 40
+      <<: *healthcheck-timing
 
+  # The backend image is built once, here; api and info reuse it.
   migrate:
-    build: *backend-build
+    build:
+      context: ./backend
     image: eos-backend:local
     command: ["sh", "-c", "alembic upgrade head && python -m app.seed"]
     environment: *backend-env
@@ -59,24 +66,23 @@ services:
     restart: "no"
 
   api:
-    build: *backend-build
     image: eos-backend:local
+    pull_policy: never
     environment: *backend-env
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${API_PORT:-8000}:8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
+    # Longer than Uvicorn's --timeout-graceful-shutdown (20 s), so shutdown can finish.
+    stop_grace_period: 25s
     healthcheck:
       test:
         - CMD
         - python
         - -c
         - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200 else 1)"
-      interval: 3s
-      timeout: 3s
-      retries: 40
-      start_period: 5s
+      <<: *healthcheck-timing
 
   web:
     build:
@@ -91,12 +97,10 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    stop_grace_period: 25s
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
-      interval: 3s
-      timeout: 3s
-      retries: 40
-      start_period: 5s
+      <<: *healthcheck-timing
 
   logs:
     image: amir20/dozzle:v11.5.0
@@ -107,8 +111,8 @@ services:
       - "127.0.0.1:${LOGS_PORT:-8080}:8080"
 
   info:
-    build: *backend-build
     image: eos-backend:local
+    pull_policy: never
     command: ["python", "-m", "app.banner"]
     environment: *backend-env
     depends_on:

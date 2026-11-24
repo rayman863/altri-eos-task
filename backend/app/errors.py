@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.envelope import INTERNAL_ERROR_MESSAGE, error_body
 from app.logging import request_id_var
 
 log = logging.getLogger("eos.errors")
@@ -58,14 +59,7 @@ def error_response(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status,
-        content={
-            "error": {
-                "code": code,
-                "message": message,
-                "details": details,
-                "request_id": request_id_var.get(),
-            }
-        },
+        content=error_body(code, message, request_id_var.get(), details),
         headers=headers,
     )
 
@@ -95,8 +89,8 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
+        # Last resort only: RequestLogMiddleware normally answers unhandled errors itself,
+        # with the request id (this handler runs outside it, where the id is gone).
         # Full traceback goes to the logs (Dozzle), never to the client.
         log.error("unhandled error", exc_info=exc)
-        return error_response(
-            500, "internal_error", "Something went wrong. Quote the request_id when reporting it."
-        )
+        return error_response(500, "internal_error", INTERNAL_ERROR_MESSAGE)

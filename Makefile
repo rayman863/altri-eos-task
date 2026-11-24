@@ -2,8 +2,11 @@
 # README too, so nothing here is required (Windows has no make by default).
 .PHONY: up down reset build logs info lint
 
-up:            ## start everything in the background, wait until healthy, print the banner
-	docker compose up -d --build --wait
+# Not `up --wait`: it fails whenever the one-shot `info` container has already exited.
+# `info` only starts once api and web are healthy, so waiting for it is the readiness check.
+up:            ## start everything in the background, wait until ready, print the banner
+	docker compose up -d --build
+	docker compose wait info
 	docker compose logs --no-log-prefix info
 
 down:          ## stop the stack (keeps the database volume)

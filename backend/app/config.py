@@ -3,7 +3,10 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+LogLevel = Literal["debug", "info", "warning", "error", "critical"]
 
 
 class Settings(BaseSettings):
@@ -31,9 +34,12 @@ class Settings(BaseSettings):
     app_clock_mode: Literal["ticking", "frozen"] = "ticking"
 
     # Logging (plan 3.10)
-    log_level: str = "info"
+    log_level: LogLevel = "info"
     log_payloads: bool = True
     log_body_limit: int = 8192
+    # Only these peers may set X-Request-ID / X-Forwarded-For (comma-separated host
+    # names or IPs; default: the Next.js server's compose service).
+    trusted_proxy_hosts: str = "web"
 
     # Values printed by the startup banner
     public_host: str = "localhost"
@@ -42,6 +48,16 @@ class Settings(BaseSettings):
     db_port: int = 5433
     logs_port: int = 8080
     api_workers: int = 1
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _lowercase_level(cls, value: object) -> object:
+        # Accept INFO / Info as well; anything not in LogLevel fails with a clear message.
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @property
+    def trusted_proxy_host_list(self) -> tuple[str, ...]:
+        return tuple(h.strip() for h in self.trusted_proxy_hosts.split(",") if h.strip())
 
 
 @lru_cache

@@ -48,6 +48,7 @@ app.add_middleware(
     RequestLogMiddleware,
     log_payloads=settings.log_payloads,
     body_limit=settings.log_body_limit,
+    trusted_proxy_hosts=settings.trusted_proxy_host_list,
 )
 
 
