@@ -8,13 +8,46 @@ import asyncio
 import logging
 import os
 import socket
+from collections.abc import AsyncIterator
 
+from fastapi import Request
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.config import Settings
 
 log = logging.getLogger("eos.db")
+
+
+def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
+    """Request-scoped session (plan 3.12 item 4): one transaction per request, committed
+    when the handler succeeds, rolled back on any error, connection always returned."""
+    sessionmaker: async_sessionmaker[AsyncSession] = request.app.state.sessionmaker
+    async with sessionmaker() as session, session.begin():
+        yield session
+
+
+def pool_status(engine: AsyncEngine) -> dict[str, int]:
+    """Pool counters for /healthz (no hostnames or credentials)."""
+    pool = engine.pool
+    checked_out = pool.checkedout()  # type: ignore[attr-defined]
+    return {
+        "size": pool.size(),  # type: ignore[attr-defined]  configured steady size
+        "open": pool.checkedin() + checked_out,  # type: ignore[attr-defined]
+        "checked_out": checked_out,
+        # SQLAlchemy's overflow() is negative until the pool has filled up; report only
+        # connections actually opened beyond the steady size.
+        "overflow": max(pool.overflow(), 0),  # type: ignore[attr-defined]
+    }
 
 
 def application_name(component: str) -> str:

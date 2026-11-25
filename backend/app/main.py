@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -9,7 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.db import application_name, make_engine, wait_for_db
+from app.db import application_name, make_engine, make_sessionmaker, pool_status, wait_for_db
 from app.errors import install_error_handlers
 from app.logging import RequestLogMiddleware, setup_logging
 
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = make_engine(settings, settings.database_url, application_name("eos-api:pool"))
     await wait_for_db(engine)
     app.state.engine = engine
+    app.state.sessionmaker = make_sessionmaker(engine)
     log.info("api started", extra={"env": settings.app_env, "version": settings.version})
     try:
         yield
@@ -52,11 +54,16 @@ app.add_middleware(
 )
 
 
-@app.get("/healthz", tags=["Health"], summary="Liveness and database check")
+async def _db_ping() -> None:
+    async with app.state.engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
+
+
+@app.get("/healthz", tags=["Health"], summary="Liveness, database and pool check")
 async def healthz() -> JSONResponse:
     try:
-        async with app.state.engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
+        # Plan 3.12: a connection and SELECT 1 within 1 s, or the database counts as down.
+        await asyncio.wait_for(_db_ping(), timeout=1.0)
         db_status = "ok"
     except Exception:  # noqa: BLE001 - report, don't crash the probe
         log.warning("healthz: database unreachable", exc_info=True)
@@ -64,7 +71,12 @@ async def healthz() -> JSONResponse:
     status = "ok" if db_status == "ok" else "error"
     return JSONResponse(
         status_code=200 if status == "ok" else 503,
-        content={"status": status, "db": db_status, "version": settings.version},
+        content={
+            "status": status,
+            "db": db_status,
+            "pool": pool_status(app.state.engine),
+            "version": settings.version,
+        },
     )
 
 

@@ -1,6 +1,6 @@
 """The clock: APP_NOW parsing, frozen and ticking modes, and the wall-clock ban."""
 
-import re
+import ast
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -53,15 +53,55 @@ def test_clock_from_settings_respects_the_mode():
     assert abs(ticking.now() - APP_NOW) < timedelta(seconds=5)
 
 
+# Calls that read the wall clock as business time. Durations (time.monotonic,
+# time.perf_counter) and log timestamps (LogRecord.created) are fine anywhere.
+_ANY_OWNER = {"now", "utcnow", "time_ns"}  # datetime.now, dt.now (aliased), time.time_ns
+
+
+def _owner_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr  # datetime.date.today -> "date"
+    return None
+
+
+def _wall_clock_calls(source: str) -> list[int]:
+    """Line numbers of wall-clock reads, whatever the import style or alias."""
+    lines = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        attr, owner = node.func.attr, _owner_name(node.func.value)
+        if (
+            attr in _ANY_OWNER
+            or (attr == "today" and owner in {"date", "datetime"})
+            or (attr == "time" and owner == "time")
+        ):
+            lines.append(node.lineno)
+    return lines
+
+
+def test_wall_clock_detector_catches_common_forms():
+    snippets = [
+        "datetime.now(UTC)",
+        "datetime.datetime.now()",
+        "dt.now(UTC)",  # from datetime import datetime as dt
+        "date.today()",
+        "time.time()",
+        "time.time_ns()",
+    ]
+    assert all(_wall_clock_calls(s) == [1] for s in snippets)
+    assert _wall_clock_calls("time.monotonic()\ntime.perf_counter()\nweeks.today(now)") == []
+
+
 def test_nothing_but_clock_py_reads_the_wall_clock():
     """Brief 2.7: read now from APP_NOW, not the system clock (plan 3.2)."""
     app_dir = Path(__file__).resolve().parents[2] / "app"
-    forbidden = re.compile(r"datetime\.(now|utcnow|today)\(|date\.today\(|time\.time\(")
     offenders = [
         f"{path.relative_to(app_dir.parent)}:{n}"
         for path in app_dir.rglob("*.py")
         if path.name != "clock.py"
-        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        if forbidden.search(line)
+        for n in _wall_clock_calls(path.read_text(encoding="utf-8"))
     ]
     assert offenders == []

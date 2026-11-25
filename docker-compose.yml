@@ -138,9 +138,16 @@ services:
       APP_NOW: 2026-11-11T15:00:00Z
       APP_CLOCK_MODE: frozen
       SEED_PATH: /seed/seed.json
+      # The separate eos_test database: tests never touch the demo data in `eos`.
+      DATABASE_URL: postgresql+asyncpg://eos_app:${EOS_APP_PASSWORD:-eos_app_dev_pw}@db:5432/eos_test
+      OWNER_DATABASE_URL: postgresql+asyncpg://eos_owner:${EOS_OWNER_PASSWORD:-eos_owner_dev_pw}@db:5432/eos_test
+      READONLY_DATABASE_URL: postgresql+asyncpg://eos_readonly:${EOS_READONLY_PASSWORD:-eos_readonly_dev_pw}@db:5432/eos_test
     volumes:
       - ./backend:/app
       - ./seed:/seed:ro
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

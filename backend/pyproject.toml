@@ -22,7 +22,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-ra"
+# No .pytest_cache: tests run in a container (as root) with the source mounted, and a
+# root-owned cache dir in the host checkout is a nuisance on Linux/macOS.
+addopts = "-ra -p no:cacheprovider"
 
 [tool.uv]
 package = false
@@ -30,6 +32,8 @@ package = false
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Same reason as pytest's cache: no root-owned cache dir in the mounted checkout.
+cache-dir = "/tmp/ruff-cache"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "DTZ", "S"]

@@ -8,7 +8,7 @@ Examples use the seed data at the default `APP_NOW` (`2026-11-11T15:00:00Z`, Wed
 
 | Topic | Rule |
 |---|---|
-| Base path | `/api/v1`. Breaking changes would go to `/api/v2`; within v1 changes are additive only |
+| Base path | `/api/v1`. Breaking changes would go to `/api/v2`; within v1 changes are additive only. Exceptions at the root: `GET /healthz` (container healthcheck) and the docs (`/docs`, `/redoc`, `/openapi.json`) |
 | Format | JSON (`application/json; charset=utf-8`), UTF-8, `snake_case` field names |
 | Auth | Session cookie `eos_session` (signed, `HttpOnly`, `SameSite=Lax`). Every endpoint needs it except `GET /auth/users`, `POST /auth/login`, `GET /healthz` |
 | Writes | Every `POST`, `PUT`, `PATCH`, `DELETE` needs `Content-Type: application/json` and `X-EOS-CSRF: 1`. A write with no body sends `{}`. A browser `Origin`, if present, must be the web origin (plan 3.15) |
@@ -66,6 +66,8 @@ Every error, whatever the status, has the same shape:
 | 500 | `internal_error` | Unexpected error; details only in the logs, found by `request_id` |
 | 503 | `db_busy` | No database connection free within 5 s |
 | 503 | `activity_unavailable` | Only with the activity log bonus: the activity worker is down; the rest of the API keeps working |
+
+Generic codes, used when no specific code above applies: `method_not_allowed` (405, with an `Allow` header), `conflict` (409), `service_unavailable` (503), and `error` for any other status.
 
 Validation example (`priority: 9`):
 
@@ -125,7 +127,8 @@ Access is checked before anything else, including the cache (plan 3.14). An inac
 | `GET /meetings/{meeting_id}/summary` | Team read | 200 | 403, 404, 409 `meeting_not_ended` |
 | `GET /teams/{team_id}/events` | Team read | 200 SSE stream | 403, 429 (more than 5 streams) |
 | `GET /activity` (bonus) | Admin | 200 | 403, 422, 503 `activity_unavailable` |
-| `GET /healthz` | Public | 200 | |
+| `GET /healthz` (root, not under `/api/v1`) | Public | 200 | 503 if the database is unreachable |
+| `GET /api/v1/ping` | Public | 200 `{"pong": "ok"}` | Round-trip check through the web proxy (`http://localhost:3000/api/v1/ping`) |
 
 ## 3. Session
 
@@ -477,7 +480,7 @@ The event `id` is the team's `cache_version`, which only goes up. On reconnect t
   "status": "ok",
   "db": "ok",
   "redis": "ok",
-  "pool": { "size": 5, "checked_out": 1, "overflow": 0 },
+  "pool": { "size": 5, "open": 2, "checked_out": 1, "overflow": 0 },
   "cache": { "hits": 1204, "misses": 87 },
   "activity_backlog": { "rows": 0, "oldest_age_s": 0 },
   "version": "1.0.0"

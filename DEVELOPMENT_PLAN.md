@@ -27,6 +27,7 @@ Built from the assessment brief, the seed README, the seed data (`seed.json`) an
 
 ### Revision log
 
+- **v20 (2026-11-25):** review of Phases 0 and 1 with a cohesion check (9 findings, all fixed: rater-trigger spec vs seed, rate-limit IP source, JSON encoding of ratings, middleware tests, contract paths and codes, stale `make up` text, root-owned test caches, Docker 25+ note, wall-clock guard). **Phase 2 done** (decision 34): models with every constraint, migration `0002` with role triggers, idempotent seed with frozen snapshots for `mt1`/`mt2`, banner users from the database, request-scoped sessions, `/healthz` pool counters. 168 tests green (rules, unit, and DB tests against `eos_test`).
 - **v19 (2026-11-25):** **Phase 1 done** (decision 33). Pure rules module in `backend/app/rules/`, clock service in `backend/app/clock.py`, 119 tests green: every rule with its boundaries, every row of section 4 against `seed.json`, and a check that nothing but `clock.py` reads the wall clock. Tests run in a `test` image via `docker compose run --rm tests` (or `make test`).
 - **v18 (2026-11-25):** Phase 0 review fixes, each verified against the running stack. Unhandled 500s now carry the request id. Fonts come from the local `geist` package, not Google. Healthchecks probe every 2 s while starting and every 30 s after, with `/healthz` logged at debug. Log bodies are capped at 8 KB. Request ids and forwarded IPs are trusted only from the `web` proxy (last `X-Forwarded-For` entry). The backend image is built once. Stop grace period is 25 s. `eos_app` can't touch `alembic_version`. `LOG_LEVEL` is validated. The init script is executable. `make up` waits for the banner instead of using `--wait`.
 - **v17 (2026-11-25):** **Phase 0 done** (decision 32). Stack verified with `docker compose up`. Implementation notes folded in: pinned versions, Next 16's `proxy.ts` (was `middleware.ts`), Cache Components off, Postgres host port 5433 (a local Postgres owns 5432 on the dev machine).
@@ -115,6 +116,7 @@ Prerequisite complete. Section 0 no longer blocks Phase 0.
 | 31 | Plan review: fix the seams and reorder the build | **Graded core first (Phases 0 to 7), then platform layers L1 to L5 behind config switches, then docs and video. Seven fixes: team-row lock order, core scope in section 9, signing in the server-side client, `meeting.state` wording, seed without Redis for tests and the report, cut-list reference, activity triggers in test and report databases** | Sections 5 and 7 rewritten; 3.14, 3.15, 3.16, 3.18, 8, 9 and `docs/DB_SCHEMA.md` fixed. ~20.5 h left, Saturday ~4.5 h |
 | 32 | Phase 0 build findings (2026-11-25) | **Pinned versions:** `postgres:17.12-alpine`, `python:3.12.16-slim-bookworm`, `node:24.22.3-alpine`, `amir20/dozzle:v11.5.0`, Next 16.4.6, React 19.3, shadcn 4.23 (Radix base), FastAPI 0.165.0, SQLAlchemy 2.1.9, asyncpg 0.32.0, Alembic 1.20.1, uv 0.13.9. **Next 16:** `middleware.ts` is now `proxy.ts`; `next.config` is read at build time, so the API address is a build argument; Cache Components turned off to keep classic dynamic rendering. **Postgres host port 5433** by default, because a local Windows `postgresql-x64-17` service owns 5432 | Plan sections 3.1, 3.11, 3.15, 3.17 and 11 updated. Phase 0 exit criteria all verified |
 | 33 | Phase 1 build finding (2026-11-25): how the rules treat events after "now" | **Rules evaluate as of `now`:** a To-Do or Issue created after now doesn't exist yet, and one done or solved after now isn't done or solved yet. At the seed's default APP_NOW (and any later date) this changes nothing; it keeps the rules report sensible if graders run it at an earlier date. Issue-order ties on identical `created_at` fall back to the Issue id, so the order is always deterministic | Goes in the README's assumptions. Implemented in `backend/app/rules/` |
+| 34 | Phase 2 build findings (2026-11-25) | **"Ratings only until the meeting ends" is an API rule, not a trigger**, because the seeded meetings are ended and already rated. **CHECKs are written NULL-safe**: a NULL result passes a CHECK, which let "solved without a note" through until a test caught it. **One statement per `op.execute`** in migrations (asyncpg prepares each one). The `issues -> todos` foreign key is added after both tables exist (Alembic's `create_table` skips `use_alter` keys). Seeded meetings are stored ended, in `conclude`, with no section timer. A `*_test` guard stops DB tests from ever touching the demo database | `docs/DB_SCHEMA.md` updated. Phase 2 exit criteria verified on the stack |
 
 ---
 
@@ -153,6 +155,7 @@ altri-eos-task/
   backend/
     app/
       main.py  config.py  clock.py  db.py  cache.py  security.py  logging.py  banner.py
+      envelope.py  jsonutil.py  # error body shape; JSON encoding of rule outputs
       rules/                  # PURE functions: weeks, status, completion, rocks, order, rating, summary
       models/  schemas/  routers/  services/  authz.py  realtime.py
       activity/               # bonus: outbox writer helper, worker loop, internal read API
@@ -160,7 +163,7 @@ altri-eos-task/
       seed.py                 # python -m app.seed [--reset]
     alembic/versions/
     alembic_activity/versions/  # bonus: eos_activity migrations
-    tests/{rules,api}/
+    tests/{rules,unit,db,api}/  helpers.py
   frontend/                   # Next.js App Router, standalone build, ecosystem.config.js for pm2-runtime, proxy.ts (CSP nonce; Next 16 renamed middleware.ts to proxy.ts)
   e2e/                        # Playwright, two browser contexts
 ```
@@ -346,7 +349,8 @@ Notes:
 
 - **"Login credentials":** sign-in has no passwords (decision 4), so the banner lists the seeded users to pick in the switcher, with email, role and teams. The Postgres user and password are dev-only defaults from `.env.example` (shown as `eos_dev_pw` above). No real secret is committed.
 - **Seeding on every `up` is safe:** `migrate` runs the seed each time, but the seed only inserts rows that are missing (`ON CONFLICT DO NOTHING` by seed id), so edits you make in the app survive restarts. `docker compose down -v` gives a clean slate; the next `up` re-migrates and re-seeds.
-- **Banner visibility:** attached `docker compose up` interleaves every service's logs. The banner appears once everything is healthy, but request logs keep scrolling after it. So also: `docker compose logs info` (or `make info`) any time, and `make up` = `docker compose up -d --wait` followed by the banner on a clean screen.
+- **Banner visibility:** attached `docker compose up` interleaves every service's logs. The banner appears once everything is healthy, but request logs keep scrolling after it. So also: `docker compose logs info` (or `make info`) any time, and `make up` = `docker compose up -d --build`, then `docker compose wait info` (the banner container only starts once api and web are healthy), then the banner on a clean screen. Not `up --wait`: it fails whenever the one-shot `info` container has already exited.
+- **Requires Docker Engine 25+ / Docker Desktop 4.27+:** the healthchecks use `start_interval` (probe every 2 s while starting, every 30 s after), which older engines reject. Goes in the README prerequisites.
 - **Less noise above the banner:** quiet log levels for `db` and `logs`, `NEXT_TELEMETRY_DISABLED=1` for `web`.
 - **Port binding:** Postgres, Redis and Dozzle bind to 127.0.0.1 only. `web` and `api` also default to 127.0.0.1; `BIND_ADDR=0.0.0.0` in `.env` opens them to the LAN (for example to join a meeting from a phone).
 - **Port clashes:** the host port for Postgres defaults to **5433**, not 5432, because a local Postgres often already owns 5432 (it does on the dev machine: a Windows `postgresql-x64-17` service). Any other clash: change the port in `.env`; the banner prints whatever is in use.
@@ -558,7 +562,7 @@ Notes: `style-src 'unsafe-inline'` is needed for the inline style attributes tha
 | Other writes | 120 per minute per user |
 | Open SSE streams | 5 per user |
 
-Over the limit gives `429` with `Retry-After`. Logins reach FastAPI from the Next.js server, so "per IP" uses the `X-Forwarded-For` that Next sets, trusted only when the request comes from the `web` container (Uvicorn `--forwarded-allow-ips`). The test suite sets `RATE_LIMIT_ENABLED=false` except in the rate-limit tests, so normal tests never trip it.
+Over the limit gives `429` with `Retry-After`. Logins reach FastAPI from the Next.js server, so "per IP" must use the client address resolved by the request middleware: the last `X-Forwarded-For` entry, believed only when the peer is the `web` container (`TRUSTED_PROXY_HOSTS`). The middleware puts it in `request.state.client_ip`; the limiter keys on that, never on `request.client`, which is the web container for every proxied call. The test suite sets `RATE_LIMIT_ENABLED=false` except in the rate-limit tests, so normal tests never trip it.
 
 **Data layer:**
 

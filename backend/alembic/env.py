@@ -8,11 +8,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
 from app.config import get_settings
+from app.models import Base
 
 settings = get_settings()
 
-# Phase 2 sets this to the models' MetaData so `alembic revision --autogenerate` works.
-target_metadata = None
+# `alembic revision --autogenerate` and `alembic check` compare against these models;
+# a test runs `alembic check` so models and migrations can't drift apart.
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

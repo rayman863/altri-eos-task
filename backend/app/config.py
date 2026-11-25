@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     db_statement_timeout_ms: int = 5000
     db_idle_in_tx_timeout_ms: int = 10000
 
-    # Clock (plan 3.2); implemented in Phase 1
+    # Seed file (compose mounts ./seed at /seed)
+    seed_path: str = "/seed/seed.json"
+
+    # Clock (plan 3.2)
     app_now: str = "2026-11-11T15:00:00Z"
     app_clock_mode: Literal["ticking", "frozen"] = "ticking"
 

@@ -166,6 +166,10 @@ class RequestLogMiddleware:
         # The proxy appends the address it saw; anything before that came from the client
         # and can be forged, so only the last entry is trusted.
         forwarded = headers.get("x-forwarded-for", "").split(",")[-1].strip() if trusted else ""
+        client_ip = forwarded or peer or "?"
+        # Shared with route code via request.state: the rate limiter must key on this
+        # resolved address, not request.client (which is the web container for proxied calls).
+        scope.setdefault("state", {}).update(request_id=request_id, client_ip=client_ip)
         token = request_id_var.set(request_id)
 
         started = time.perf_counter()
@@ -239,7 +243,7 @@ class RequestLogMiddleware:
                 "query": scope.get("query_string", b"").decode(errors="replace") or None,
                 "status": status,
                 "duration_ms": round((time.perf_counter() - started) * 1000, 1),
-                "client_ip": forwarded or peer or "?",
+                "client_ip": client_ip,
             }
             if self.log_payloads:
                 entry["request_body"] = _body_for_log(

@@ -261,7 +261,8 @@ Each referenced table gets `UNIQUE (id, team_id)` to make these possible.
 | `scores` | `extract(isodow FROM week_start) = 1` (Mondays only); `abs(value) <= 1e9` |
 | `rocks` | `status IN ('on_track', 'off_track', 'complete')`; `quarter ~ '^[0-9]{4}-Q[1-4]$'` |
 | `issues` | `priority IS NULL OR priority BETWEEN 1 AND 5` |
-| `issues` | Solved state is consistent: `solved_at IS NULL` implies `resolution_note IS NULL` and `solved_by IS NULL`; `solved_at IS NOT NULL` implies `btrim(resolution_note) <> ''` (seeded solved Issues have no `solved_by`, so it stays nullable) |
+| `issues` | Solved state is consistent: `solved_at IS NULL` implies `resolution_note IS NULL` and `solved_by IS NULL`; `solved_at IS NOT NULL` implies `resolution_note IS NOT NULL AND btrim(resolution_note) <> ''` (seeded solved Issues have no `solved_by`, so it stays nullable). The explicit `IS NOT NULL` matters: with a NULL note `btrim(...) <> ''` is NULL, and a CHECK that evaluates to NULL passes |
+| all tables with an `id` | `id ~ '^[a-z0-9_]{1,64}$'` (seed ids and app-generated ids alike); `users.email` must look like an address |
 | `issues` | `source_kind` matches its columns: `measurable_week` sets exactly `source_measurable_id` + `source_week_start`; `rock` sets only `source_rock_id`; `todo` sets only `source_todo_id`; `NULL` sets none |
 | `issues` | `source_week_start` is a Monday when set |
 | `meetings` | `section IN ('scorecard', 'ids', 'conclude')`; `ended_at IS NULL OR ended_at >= started_at` |
@@ -276,7 +277,7 @@ A plain foreign key cannot check a user's role, so these use constraint triggers
 |---|---|---|
 | `check_owner_eligible` | `measurables`, `rocks`, `issues`, `todos` (insert, and update of `owner_id`) | Owner is not an Observer, and is either an Admin or a member of the row's team (decision 5) |
 | `check_facilitator_eligible` | `meetings` | Facilitator is an Admin or a Team Member of that team |
-| `check_rater_eligible` | `meeting_ratings` | Rater is not an Observer; ratings are rejected once the meeting has ended |
+| `check_rater_eligible` | `meeting_ratings` | Rater is not an Observer (attendance itself is the foreign key to `meeting_attendees`). "Only until the meeting ends" is checked by the API's rating endpoint, not here: the seeded meetings are already ended and come with their ratings |
 
 ## Database roles (least privilege)
 
