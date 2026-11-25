@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://eos_app:eos_app_dev_pw@db:5432/eos"
     owner_database_url: str = "postgresql+asyncpg://eos_owner:eos_owner_dev_pw@db:5432/eos"
     readonly_database_url: str = "postgresql+asyncpg://eos_readonly:eos_readonly_dev_pw@db:5432/eos"
+    # Scratch database the rules report migrates, wipes and seeds on every run (Phase 3).
+    report_database_url: str = "postgresql+asyncpg://eos_owner:eos_owner_dev_pw@db:5432/eos_report"
 
     # Connection pool (plan 3.12)
     db_pool_size: int = 5

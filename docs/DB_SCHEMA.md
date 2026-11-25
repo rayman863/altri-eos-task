@@ -375,7 +375,7 @@ erDiagram
 
 ## Snapshot shape (`meeting_summaries.summary`)
 
-Mirrors the rules report's meeting format so one function (`build_meeting_summary`) produces both. Example for seeded meeting `mt2`, hand-computed from `seed.json` (to be confirmed by tests):
+Mirrors the rules report's meeting format so one function (`build_meeting_summary`) produces both. Example for seeded meeting `mt2`, hand-computed from `seed.json` and confirmed by tests (the frozen snapshot and the rules report's recomputation are checked against each other):
 
 ```json
 {
@@ -395,6 +395,26 @@ Mirrors the rules report's meeting format so one function (`build_meeting_summar
   "issues_solved": ["i6"],
   "todos_created": ["t30"],
   "attendee_ids": ["u1", "u2", "u3", "u4", "u5"],
-  "rating": 8.3
+  "rating": 8.3,
+  "labels": {
+    "users": {
+      "u1": "Avery Admin",
+      "u2": "Blake Brooks",
+      "u3": "Casey Cho",
+      "u4": "Dana Diaz",
+      "u5": "Ellis Evans"
+    },
+    "measurables": {
+      "m1": "New deals closed",
+      "m2": "Customer churn",
+      "m3": "Avg first response",
+      "m4": "Payroll runs",
+      "m5": "Cash on hand"
+    },
+    "issues": { "i6": "Payroll runs, week of Oct 26" },
+    "todos": { "t30": "Set payroll reminder" }
+  }
 }
 ```
+
+The fields from `scorecard_week` to `rating` are exactly the rules report's meeting entry. `labels` is frozen with them: the names as they were when the meeting ended (attendees and facilitator, the team's Measurables, and the solved Issues and new To-Dos), so the summary screen can show names without joining to rows that may since have changed.

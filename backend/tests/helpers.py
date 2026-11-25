@@ -2,8 +2,10 @@
 
 import asyncio
 import json
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 PEER = "172.30.0.9"
@@ -59,3 +61,9 @@ def call(
     response_headers = {k.decode(): v.decode() for k, v in start["headers"]}
     raw = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
     return start["status"], response_headers, json.loads(raw) if raw else None
+
+
+def committed_report_path() -> Path:
+    """The committed rules_report.json (the tests container mounts it at RULES_REPORT_PATH)."""
+    env = os.environ.get("RULES_REPORT_PATH")
+    return Path(env) if env else Path(__file__).resolve().parents[2] / "rules_report.json"

@@ -16,10 +16,14 @@ settings = get_settings()
 # a test runs `alembic check` so models and migrations can't drift apart.
 target_metadata = Base.metadata
 
+# The rules report migrates its own scratch database through Alembic's command API and
+# passes the URL in `config.attributes`; everything else uses OWNER_DATABASE_URL.
+database_url: str = context.config.attributes.get("database_url") or settings.owner_database_url
+
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.owner_database_url,
+        url=database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -52,7 +56,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_async_migrations() -> None:
     engine = create_async_engine(
-        settings.owner_database_url,
+        database_url,
         poolclass=pool.NullPool,
         connect_args={"server_settings": {"application_name": "eos-migrate"}},
     )

@@ -19,6 +19,8 @@ __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
+# Half-written rules report (make rules-report only moves it into place on success)
+rules_report.json.tmp
 .ruff_cache/
 .mypy_cache/
 

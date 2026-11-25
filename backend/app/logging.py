@@ -14,7 +14,7 @@ import secrets
 import sys
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TextIO
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -55,8 +55,10 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, default=str, ensure_ascii=False)
 
 
-def setup_logging(level: str) -> None:
-    handler = logging.StreamHandler(sys.stdout)
+def setup_logging(level: str, stream: TextIO = sys.stdout) -> None:
+    """JSON logs on stdout for services. CLIs whose stdout is their output (the rules
+    report) pass sys.stderr."""
+    handler = logging.StreamHandler(stream)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
     root.handlers[:] = [handler]

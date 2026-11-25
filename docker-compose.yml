@@ -12,6 +12,8 @@ x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://eos_app:${EOS_APP_PASSWORD:-eos_app_dev_pw}@db:5432/eos
   OWNER_DATABASE_URL: postgresql+asyncpg://eos_owner:${EOS_OWNER_PASSWORD:-eos_owner_dev_pw}@db:5432/eos
   READONLY_DATABASE_URL: postgresql+asyncpg://eos_readonly:${EOS_READONLY_PASSWORD:-eos_readonly_dev_pw}@db:5432/eos
+  # Scratch database the rules report wipes and seeds on every run, never the demo data.
+  REPORT_DATABASE_URL: postgresql+asyncpg://eos_owner:${EOS_OWNER_PASSWORD:-eos_owner_dev_pw}@db:5432/eos_report
   SESSION_SECRET: ${SESSION_SECRET:-dev-only-session-secret-change-me-0000000000000000}
   WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
   PUBLIC_HOST: ${PUBLIC_HOST:-localhost}
@@ -123,6 +125,31 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Rules report (Phase 3). Only runs on demand and prints JSON to stdout:
+  #   docker compose --progress quiet run --rm --build rules-report                               (at APP_NOW)
+  #   docker compose --progress quiet run --rm --build -e APP_NOW=2026-11-18T15:00:00Z rules-report
+  #   make rules-report        (rewrites the committed rules_report.json, see the Makefile)
+  # It migrates, wipes and seeds its own eos_report database and needs nothing but `db`,
+  # so the demo database `eos` (schema and data) is never touched. Its own build section
+  # (same image as migrate) lets a fresh clone build on demand, and `--build` picks up code
+  # edits; being in a profile keeps it out of `up` and `build`, so nothing builds twice.
+  rules-report:
+    profiles: ["tools"]
+    build:
+      context: ./backend
+      target: runtime
+    image: eos-backend:local
+    command: ["python", "-m", "app.rules_report"]
+    environment:
+      <<: *backend-env
+      LOG_LEVEL: ${LOG_LEVEL:-warning}
+    volumes:
+      - ./seed:/seed:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   # Test runner (plan section 6). Only starts on demand:
   #   docker compose run --rm tests                 (everything)
   #   docker compose run --rm tests pytest tests/rules
@@ -135,16 +162,23 @@ services:
     image: eos-backend-test:local
     environment:
       APP_ENV: test
-      APP_NOW: 2026-11-11T15:00:00Z
+      # Quoted: unquoted, YAML reads it as a timestamp and compose passes "2026-11-11 15:00:00 +0000 UTC".
+      APP_NOW: "2026-11-11T15:00:00Z"
       APP_CLOCK_MODE: frozen
       SEED_PATH: /seed/seed.json
       # The separate eos_test database: tests never touch the demo data in `eos`.
       DATABASE_URL: postgresql+asyncpg://eos_app:${EOS_APP_PASSWORD:-eos_app_dev_pw}@db:5432/eos_test
       OWNER_DATABASE_URL: postgresql+asyncpg://eos_owner:${EOS_OWNER_PASSWORD:-eos_owner_dev_pw}@db:5432/eos_test
       READONLY_DATABASE_URL: postgresql+asyncpg://eos_readonly:${EOS_READONLY_PASSWORD:-eos_readonly_dev_pw}@db:5432/eos_test
+      REPORT_DATABASE_URL: postgresql+asyncpg://eos_owner:${EOS_OWNER_PASSWORD:-eos_owner_dev_pw}@db:5432/eos_test
+      # The committed report, so a test can prove it is reproducible.
+      RULES_REPORT_PATH: /repo/rules_report.json
     volumes:
       - ./backend:/app
       - ./seed:/seed:ro
+      # The repo root, not the single file: a missing file in a short-syntax bind mount
+      # would be created on the host as a directory named rules_report.json.
+      - ./:/repo:ro
     depends_on:
       db:
         condition: service_healthy
