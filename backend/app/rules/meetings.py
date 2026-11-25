@@ -40,6 +40,9 @@ class MeetingInput:
     ended_at: datetime
     attendee_ids: Sequence[str]
     ratings: Sequence[int]
+    # The week stored on the meeting when it started. The frozen snapshot passes it so the
+    # summary reviews exactly the week the live meeting showed; None derives it.
+    scorecard_week: date | None = None
 
 
 def build_meeting_summary(
@@ -55,7 +58,7 @@ def build_meeting_summary(
 
     Issues solved and To-Dos created between start and end (inclusive) belong to the
     meeting; the seeded meetings have no explicit links, so attribution is by time."""
-    week = scorecard_week_for(meeting.started_at, tz)
+    week = meeting.scorecard_week or scorecard_week_for(meeting.started_at, tz)
     reference_week = week_of(meeting.ended_at, tz)
 
     def during(ts: datetime | None) -> bool:

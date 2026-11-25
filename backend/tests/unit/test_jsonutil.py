@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.jsonutil import dumps, to_jsonable
+from app.jsonutil import decimal_str, dumps, to_jsonable
 from tests.helpers import utc
 
 
@@ -31,3 +31,26 @@ def test_naive_datetimes_and_unknown_types_fail_loudly():
         dumps(datetime(2026, 1, 1))  # noqa: DTZ001
     with pytest.raises(TypeError):
         dumps(object())
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("8.0000", "8"),
+        ("4.1000", "4.1"),
+        ("12.2500", "12.25"),
+        ("100.0000", "100"),
+        ("1000000000.0000", "1000000000"),
+        ("-3.5000", "-3.5"),
+        ("0.0001", "0.0001"),
+        ("0.0000", "0"),
+        ("-0.0000", "0"),
+    ],
+)
+def test_api_decimals_are_exact_shortest_strings(value, expected):
+    assert decimal_str(Decimal(value)) == expected
+
+
+def test_api_decimals_refuse_nan():
+    with pytest.raises(ValueError):
+        decimal_str(Decimal("NaN"))

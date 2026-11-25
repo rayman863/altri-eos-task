@@ -257,6 +257,20 @@ class Issue(Base):
             unique=True,
             postgresql_where=text("solved_at IS NULL AND source_kind = 'measurable_week'"),
         ),
+        # Same rule for the bonus sources (migration 0003): the columns and source_kind
+        # values already exist, so the guard ships with them.
+        Index(
+            "ux_issues_open_rock",
+            "source_rock_id",
+            unique=True,
+            postgresql_where=text("solved_at IS NULL AND source_kind = 'rock'"),
+        ),
+        Index(
+            "ux_issues_open_todo",
+            "source_todo_id",
+            unique=True,
+            postgresql_where=text("solved_at IS NULL AND source_kind = 'todo'"),
+        ),
         Index("ix_issues_team_id_solved_at", "team_id", "solved_at"),
     )
 

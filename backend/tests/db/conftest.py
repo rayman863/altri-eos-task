@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app import seed
@@ -34,13 +34,22 @@ def migrated(settings: Settings) -> Settings:
     return settings
 
 
-def reseed(settings: Settings, *, reset: bool) -> dict[str, int]:
+def reseed(settings: Settings, *, reset: bool, seed_path: Path | None = None) -> dict[str, int]:
     return asyncio.run(
         seed.run(
             reset=reset,
-            seed_path=Path(settings.seed_path),
+            seed_path=seed_path or Path(settings.seed_path),
             database_url=settings.owner_database_url,
         )
+    )
+
+
+def engine_for(url: str) -> AsyncEngine:
+    """Short-lived test engine, named `eos-test` in pg_stat_activity (plan 3.12)."""
+    return create_async_engine(
+        url,
+        poolclass=NullPool,
+        connect_args={"server_settings": {"application_name": "eos-test"}},
     )
 
 
@@ -51,7 +60,7 @@ def seeded(migrated: Settings) -> Settings:
 
 
 async def _fetch(url: str, sql: str, params: dict[str, Any]) -> list[Any]:
-    engine = create_async_engine(url, poolclass=NullPool)
+    engine = engine_for(url)
     try:
         async with engine.begin() as conn:
             result = await conn.execute(text(sql), params)
@@ -66,7 +75,7 @@ def query(url: str, sql: str, **params: Any) -> list[Any]:
 
 
 async def _attempt(url: str, statements: list[str], params: dict[str, Any]) -> None:
-    engine = create_async_engine(url, poolclass=NullPool)
+    engine = engine_for(url)
     try:
         async with engine.connect() as conn:
             transaction = await conn.begin()

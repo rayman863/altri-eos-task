@@ -246,10 +246,10 @@ Each referenced table gets `UNIQUE (id, team_id)` to make these possible.
 | Index | Definition | Rule it enforces |
 |---|---|---|
 | `ux_issues_open_measurable_week` | `issues (source_measurable_id, source_week_start) WHERE solved_at IS NULL AND source_kind = 'measurable_week'` | **No duplicate Issues** for one Measurable and week, even under concurrent clicks (brief 2.6) |
-| `ux_issues_open_rock` (bonus) | `issues (source_rock_id) WHERE solved_at IS NULL AND source_kind = 'rock'` | Same rule for Rocks |
-| `ux_issues_open_todo` (bonus) | `issues (source_todo_id) WHERE solved_at IS NULL AND source_kind = 'todo'` | Same rule for To-Dos |
-| `ux_meetings_one_active` | `meetings (team_id) WHERE ended_at IS NULL` | One active meeting per team |
-| `users_email_key` | `users (email)` | One account per email |
+| `ux_issues_open_rock` (bonus source; index in migration `0003`) | `issues (source_rock_id) WHERE solved_at IS NULL AND source_kind = 'rock'` | Same rule for Rocks |
+| `ux_issues_open_todo` (bonus source; index in migration `0003`) | `issues (source_todo_id) WHERE solved_at IS NULL AND source_kind = 'todo'` | Same rule for To-Dos |
+| `ux_meetings_one_active_per_team` | `meetings (team_id) WHERE ended_at IS NULL` | One active meeting per team |
+| `uq_users_email` | `users (email)` | One account per email |
 | Primary keys | `scores (measurable_id, week_start)`, `memberships (user_id, team_id)`, `meeting_attendees (meeting_id, user_id)`, `meeting_ratings (meeting_id, user_id)` | One score per cell, one membership, one attendance, one rating per attendee |
 
 ### CHECK constraints
@@ -271,13 +271,13 @@ Each referenced table gets `UNIQUE (id, team_id)` to make these possible.
 
 ### Role rules (triggers)
 
-A plain foreign key cannot check a user's role, so these use constraint triggers. The API checks the same rules first to return a clear `403`/`422`; the trigger is the safety net.
+A plain foreign key cannot check a user's role, so these use `BEFORE INSERT OR UPDATE OF …` row triggers (migration `0002`). The API checks the same rules first to return a clear `403`/`422`; the trigger is the safety net. A violation raises SQLSTATE `23514` (`check_violation`) with the constraint name in the last column, which is what the API's error mapper matches. The functions pin `SET search_path = public, pg_temp` (migration `0003`), so an unqualified `users` or `memberships` can't resolve to another schema's table. All the names the API maps live in `backend/app/constraints.py`, and a DB test checks that each one exists.
 
-| Trigger | On | Rule |
-|---|---|---|
-| `check_owner_eligible` | `measurables`, `rocks`, `issues`, `todos` (insert, and update of `owner_id`) | Owner is not an Observer, and is either an Admin or a member of the row's team (decision 5) |
-| `check_facilitator_eligible` | `meetings` | Facilitator is an Admin or a Team Member of that team |
-| `check_rater_eligible` | `meeting_ratings` | Rater is not an Observer (attendance itself is the foreign key to `meeting_attendees`). "Only until the meeting ends" is checked by the API's rating endpoint, not here: the seeded meetings are already ended and come with their ratings |
+| Triggers | Function | On (fires on insert, and on update of) | Raised constraint name | Rule |
+|---|---|---|---|---|
+| `trg_measurables_owner_eligible`, `trg_rocks_owner_eligible`, `trg_issues_owner_eligible`, `trg_todos_owner_eligible` | `eos_check_owner_eligible()` | `measurables`, `rocks`, `issues`, `todos` (`owner_id`, `team_id`) | `owner_eligible` | Owner is not an Observer, and is either an Admin or a member of the row's team (decision 5) |
+| `trg_meetings_facilitator_eligible` | `eos_check_facilitator_eligible()` | `meetings` (`facilitator_id`, `team_id`) | `facilitator_eligible` | Facilitator is not an Observer, and is an Admin or a member of that team |
+| `trg_meeting_ratings_rater_eligible` | `eos_check_rater_eligible()` | `meeting_ratings` (`user_id`) | `rater_eligible` | Rater is not an Observer (attendance itself is the foreign key `fk_meeting_ratings_attendee` to `meeting_attendees`). "Only until the meeting ends" is checked by the API's rating endpoint, not here: the seeded meetings are already ended and come with their ratings |
 
 ## Database roles (least privilege)
 
@@ -313,7 +313,9 @@ Default privileges are set so tables created by later migrations get the same gr
 - **Time types:** every instant is `timestamptz`, stored in UTC. Calendar values (`due_date`, `week_start`, `scorecard_week`) are `date` in company time. The company zone lives in `companies.timezone`. No column stores a UTC offset.
 - **Scores are `numeric(14,4)`** with a range CHECK (absolute value up to 1e9), read as Python `Decimal`, so boundary comparisons like `3.0 <= 3.0` are exact.
 - **Computed values are not stored:** Measurable status, To-Do completion rate, overdue flag, Rock status and progress, Issue order and meeting rating all come from the pure rules module at read time. Storing them would go stale when "now" or the data changes, and the rules report must be computable at any date. The single exception is the frozen `meeting_summaries` snapshot, which is stale on purpose.
-- **Seeded meetings** have no section history. They are stored with `section = 'conclude'` and `section_started_at = NULL`, which is why that column is nullable.
+- **Seeded meetings** have no section history. Ended ones are stored with `section = 'conclude'` and `section_started_at = NULL`, which is why that column is nullable, and get their frozen summary at seed time. A seed meeting without `ended_at` would load as active, in `scorecard` with `section_started_at = started_at`, and no summary.
+- **The seed runs once per database.** `migrate` calls it on every `docker compose up`, but it does nothing if the seed company already exists (the whole seed is one transaction, so that row means "fully seeded"). Re-inserting "missing" rows instead would bring back rows deleted in the app.
+- **Frozen summaries read `meetings.scorecard_week`**, the week stored when the meeting started, rather than recomputing it, so the summary reviews exactly the week the live meeting showed.
 - **`teams.cache_version`** is incremented in the same transaction as every team-scoped write (scores, Issues, To-Dos, meeting actions), always as the **first** statement, so every write takes the team row lock before any other lock and two writes can't deadlock. Writes within one team queue briefly behind that lock; writes in different teams never wait on each other. Redis cache keys include it, so a cached read model can never be served after the data it was built from changed, even if Redis is outdated or briefly unreachable. See section 3.14 of the development plan.
 - **`version` columns** on `scores` and `issues` support the lost-update bonus (`If-Match` gives `409`). Without that header, the last save wins, as the brief requires for scores.
 - **`clock_anchor`** holds one row: the shared origin of the ticking clock. Every API worker computes `now = app_now + (wall clock - real_now)` from it, so all workers show the same meeting timer and a worker restart does not reset it. The row is replaced when the `APP_NOW` setting changes. Required because the API runs several Uvicorn workers.

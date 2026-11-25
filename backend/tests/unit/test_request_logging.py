@@ -3,7 +3,6 @@
 Pure ASGI calls against a tiny app wired exactly like app.main: no server, no database.
 """
 
-import asyncio
 import json
 import logging
 from typing import Any
@@ -14,8 +13,7 @@ from pydantic import BaseModel
 
 from app.errors import install_error_handlers
 from app.logging import RequestLogMiddleware
-
-PEER = "172.30.0.9"
+from tests.helpers import PEER, call
 
 
 class Item(BaseModel):
@@ -50,48 +48,6 @@ def make_app(*, trusted: tuple[str, ...] = (), body_limit: int = 100) -> FastAPI
         return item.model_dump()
 
     return app
-
-
-def call(
-    asgi: Any,
-    path: str,
-    *,
-    method: str = "GET",
-    headers: list[tuple[bytes, bytes]] | None = None,
-    body: bytes = b"",
-    disconnect: bool = False,
-) -> tuple[int | None, dict[str, str], Any]:
-    sent: list[dict[str, Any]] = []
-    scope = {
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": method,
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode(),
-        "query_string": b"",
-        "root_path": "",
-        "headers": headers or [],
-        "client": (PEER, 1234),
-        "server": ("test", 80),
-    }
-
-    async def receive() -> dict[str, Any]:
-        if disconnect:
-            return {"type": "http.disconnect"}
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    async def send(message: dict[str, Any]) -> None:
-        sent.append(message)
-
-    asyncio.run(asgi(scope, receive, send))
-    start = next((m for m in sent if m["type"] == "http.response.start"), None)
-    if start is None:
-        return None, {}, None
-    response_headers = {k.decode(): v.decode() for k, v in start["headers"]}
-    raw = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
-    return start["status"], response_headers, json.loads(raw) if raw else None
 
 
 def request_logs(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:

@@ -1,10 +1,14 @@
 """Seed loader: `python -m app.seed [--reset]` (plan 3.11, brief 2.7).
 
 Loads seed/seed.json in one transaction as eos_owner:
-- Only inserts rows that are missing (ON CONFLICT DO NOTHING by seed id), so it is safe to
-  rerun on every `docker compose up` and never overwrites edits made in the app.
+- Seeds once: if the seed company already exists, it does nothing at all. `migrate` runs
+  the seed on every `docker compose up`, so re-inserting "missing" rows would bring back
+  rows deleted in the app (a cleared score, say). One transaction means a database either
+  has the whole seed or none of it, so the company row is a reliable marker.
+- Inserts use ON CONFLICT DO NOTHING by seed id as a second guard.
 - --reset truncates every app table first (tests and the rules report's scratch database).
-- Writes the frozen summaries of the two seeded meetings (plan 3.9).
+- Writes the frozen summaries of the ended seeded meetings (plan 3.9). A meeting without
+  `ended_at` is loaded as active, in its first section, with no summary.
 """
 
 import argparse
@@ -59,6 +63,25 @@ def _num(value: Any) -> Decimal | None:
 def read_seed(path: Path) -> dict[str, Any]:
     # Floats as Decimal: scores like 4.1 and goals like 3.0 must stay exact.
     return json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal)
+
+
+def meeting_row(mt: Mapping[str, Any], tz: ZoneInfo) -> dict[str, Any]:
+    started_at = _ts(mt["started_at"])
+    ended_at = _ts(mt.get("ended_at"))
+    if started_at is None:
+        raise ValueError(f"seed meeting {mt['id']!r} has no started_at")
+    return {
+        "id": mt["id"],
+        "team_id": mt["team_id"],
+        "facilitator_id": mt["facilitator_id"],
+        "started_at": started_at,
+        "ended_at": ended_at,
+        # Ended seeded meetings have no section history (docs/DB_SCHEMA.md); an active
+        # one is in its first section, which started with the meeting.
+        "section": "conclude" if ended_at else "scorecard",
+        "section_started_at": None if ended_at else started_at,
+        "scorecard_week": scorecard_week_for(started_at, tz),
+    }
 
 
 def seed_rows(raw: Mapping[str, Any]) -> list[tuple[Table, list[dict[str, Any]]]]:
@@ -165,20 +188,7 @@ def seed_rows(raw: Mapping[str, Any]) -> list[tuple[Table, list[dict[str, Any]]]
         ),
         (
             m.Meeting.__table__,
-            [
-                {
-                    "id": mt["id"],
-                    "team_id": mt["team_id"],
-                    "facilitator_id": mt["facilitator_id"],
-                    "started_at": _ts(mt["started_at"]),
-                    "ended_at": _ts(mt["ended_at"]),
-                    # Ended seeded meetings have no section history (docs/DB_SCHEMA.md).
-                    "section": "conclude",
-                    "section_started_at": None,
-                    "scorecard_week": scorecard_week_for(_ts(mt["started_at"]), tz),  # type: ignore[arg-type]
-                }
-                for mt in meetings
-            ],
+            [meeting_row(mt, tz) for mt in meetings],
         ),
         (
             m.MeetingAttendee.__table__,
@@ -205,15 +215,23 @@ def seed_rows(raw: Mapping[str, Any]) -> list[tuple[Table, list[dict[str, Any]]]
 
 
 async def load(conn: AsyncConnection, raw: Mapping[str, Any]) -> dict[str, int]:
-    """Insert missing seed rows and seeded-meeting snapshots. Returns rows inserted per table."""
+    """Insert the seed and the ended seeded meetings' snapshots, unless this database was
+    already seeded. Returns rows inserted per table (all zero when already seeded)."""
+    tables = seed_rows(raw)
+    company_id = raw["company"]["id"]
+    if await conn.scalar(select(m.Company.id).where(m.Company.id == company_id)) is not None:
+        return {table.name: 0 for table, _ in tables} | {"meeting_summaries": 0}
+
     inserted: dict[str, int] = {}
-    for table, rows in seed_rows(raw):
+    for table, rows in tables:
         if rows:
             result = await conn.execute(insert(table).values(rows).on_conflict_do_nothing())
             inserted[table.name] = result.rowcount or 0
 
     snapshots = 0
     for meeting in raw["meetings"]:
+        if meeting.get("ended_at") is None:
+            continue  # active meeting: its summary is written when it ends
         exists = await conn.scalar(
             select(m.MeetingSummary.meeting_id).where(m.MeetingSummary.meeting_id == meeting["id"])
         )

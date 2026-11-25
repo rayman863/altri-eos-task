@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app import models as m
 from app.jsonutil import to_jsonable
-from app.rules.meetings import MeetingInput, build_meeting_summary, scorecard_week_for
+from app.rules.meetings import MeetingInput, build_meeting_summary
 from app.rules.types import Goal, Issue, Todo
 
 
@@ -45,6 +45,7 @@ async def meeting_snapshot(conn: AsyncConnection, meeting_id: str) -> dict[str, 
                 m.Meeting.facilitator_id,
                 m.Meeting.started_at,
                 m.Meeting.ended_at,
+                m.Meeting.scorecard_week,
             ).where(m.Meeting.id == meeting_id)
         )
     ).one_or_none()
@@ -55,7 +56,8 @@ async def meeting_snapshot(conn: AsyncConnection, meeting_id: str) -> dict[str, 
 
     team_id = meeting.team_id
     tz = await team_timezone(conn, team_id)
-    week: date = scorecard_week_for(meeting.started_at, tz)
+    # The week stored when the meeting started, not a recomputation: one source of truth.
+    week: date = meeting.scorecard_week
 
     measurables = (
         await conn.execute(
@@ -106,7 +108,7 @@ async def meeting_snapshot(conn: AsyncConnection, meeting_id: str) -> dict[str, 
     )
 
     summary = build_meeting_summary(
-        MeetingInput(meeting.started_at, meeting.ended_at, attendee_ids, ratings),
+        MeetingInput(meeting.started_at, meeting.ended_at, attendee_ids, ratings, week),
         goals=goals,
         scores=scores,
         issues=[Issue(r.id, r.priority, r.created_at, r.solved_at) for r in issues],

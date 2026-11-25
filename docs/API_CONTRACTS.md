@@ -15,7 +15,7 @@ Examples use the seed data at the default `APP_NOW` (`2026-11-11T15:00:00Z`, Wed
 | Request id | Every response carries `X-Request-ID` (generated, or propagated from the Next.js server). Errors repeat it in the body |
 | Instants | ISO 8601 in UTC with `Z`, for example `2026-11-09T16:00:00Z` |
 | Calendar dates | `YYYY-MM-DD` in company time (`America/Chicago`): `due_date`, `week_start`, `today`. Weeks are named by their Monday |
-| Decimals | Scores and goals are returned as **strings** (`"3.0"`, `"4.5"`) so no client ever does float maths. Requests accept a string or a number, at most 4 decimal places, absolute value up to 1e9 |
+| Decimals | Scores and goals are returned as **strings** in their shortest exact form, with no trailing zeros and no exponent (`"3"`, `"4.5"`, `"12.25"`, `"100"`), so no client ever does float maths. The server formats them with `app.jsonutil.decimal_str` (the database stores `numeric(14,4)`, so `8.0000` is sent as `"8"`). Requests accept a string or a number, at most 4 decimal places, absolute value up to 1e9. Meeting ratings are the exception: a JSON number with one decimal (`8.3`, `8.0`) |
 | Computed values | Statuses, overdue flags, completion rates, Rock status and progress, Issue order and ratings are always computed by the server (rules module). Clients display them, never recompute them |
 | Ids | Seed ids are kept (`u1`, `m1`, `t12`, `mt1`). New rows get a prefixed random id, for example `i_7k3m9q2x`. Path ids must match `^[a-z0-9_]{1,64}$` |
 | Unknown fields | Rejected with `422` (`extra="forbid"`) |

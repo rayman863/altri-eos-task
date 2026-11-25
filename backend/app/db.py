@@ -9,8 +9,9 @@ import logging
 import os
 import socket
 from collections.abc import AsyncIterator
+from typing import Annotated
 
-from fastapi import Request
+from fastapi import Depends, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -30,10 +31,19 @@ def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
 
 async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
     """Request-scoped session (plan 3.12 item 4): one transaction per request, committed
-    when the handler succeeds, rolled back on any error, connection always returned."""
+    when the handler succeeds, rolled back on any error, connection always returned.
+
+    Use it through `DbSession`, never a bare `Depends(get_session)`: FastAPI's default
+    dependency scope ("request") runs the code after `yield` only after the response has
+    been sent, so the commit would happen after the client already saw a 2xx and a failed
+    commit could never become a 500."""
     sessionmaker: async_sessionmaker[AsyncSession] = request.app.state.sessionmaker
     async with sessionmaker() as session, session.begin():
         yield session
+
+
+# scope="function": commit (or roll back) before the response is sent.
+DbSession = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 
 def pool_status(engine: AsyncEngine) -> dict[str, int]:

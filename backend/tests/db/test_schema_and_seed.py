@@ -2,11 +2,16 @@
 criteria). Runs against eos_test; every probe that should fail runs in a rolled-back
 transaction."""
 
+import asyncio
+import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
-from tests.db.conftest import BACKEND, db_error, query, reseed
+from app import constraints
+from app.services.summaries import meeting_snapshot
+from tests.db.conftest import BACKEND, db_error, engine_for, query, reseed
 
 CHECK, UNIQUE, FOREIGN_KEY, NO_PRIVILEGE = "23514", "23505", "23503", "42501"
 
@@ -67,6 +72,50 @@ def test_rerunning_the_seed_keeps_edits_made_in_the_app(seeded):
         "SELECT value FROM scores WHERE measurable_id = 'm1' AND week_start = '2026-11-02'",
     )[0][0]
     assert value == 77
+
+
+def test_rerunning_the_seed_does_not_bring_back_deleted_rows(seeded):
+    cell = "measurable_id = 'm1' AND week_start = '2026-11-02'"
+    query(seeded.database_url, f"DELETE FROM scores WHERE {cell}")  # noqa: S608 - constant
+    inserted = reseed(seeded, reset=False)
+    assert all(n == 0 for n in inserted.values()), inserted
+    assert query(seeded.owner_database_url, f"SELECT count(*) FROM scores WHERE {cell}")[0][0] == 0  # noqa: S608
+
+
+def test_an_active_seed_meeting_loads_in_its_first_section_without_a_summary(seeded, tmp_path):
+    raw = json.loads(Path(seeded.seed_path).read_text(encoding="utf-8"))
+    mt2 = next(mt for mt in raw["meetings"] if mt["id"] == "mt2")
+    mt2["ended_at"] = None
+    path = tmp_path / "seed.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    inserted = reseed(seeded, reset=True, seed_path=path)
+    assert inserted["meeting_summaries"] == 1
+    rows = query(
+        seeded.owner_database_url,
+        "SELECT section, section_started_at = started_at, ended_at FROM meetings WHERE id = 'mt2'",
+    )
+    assert tuple(rows[0]) == ("scorecard", True, None)
+    summaries = query(seeded.owner_database_url, "SELECT meeting_id FROM meeting_summaries")
+    assert [r[0] for r in summaries] == ["mt1"]
+
+
+def test_snapshot_uses_the_week_stored_on_the_meeting(seeded):
+    # Pretend mt2 was started for the week before; the snapshot must follow the stored week.
+    query(
+        seeded.owner_database_url,
+        "UPDATE meetings SET scorecard_week = '2026-10-19' WHERE id = 'mt2'",
+    )
+
+    async def snapshot() -> dict:
+        engine = engine_for(seeded.owner_database_url)
+        try:
+            async with engine.connect() as conn:
+                return await meeting_snapshot(conn, "mt2")
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(snapshot())["scorecard_week"] == "2026-10-19"
 
 
 def test_seed_keeps_decimals_exact(seeded):
@@ -171,7 +220,27 @@ def test_no_duplicate_open_issue_for_a_measurable_week(seeded):
         " 'Dup', '2026-11-11T15:00:00Z', 'measurable_week', 'm1', '2026-11-02')",
     )
     assert sqlstate == UNIQUE
-    assert "ux_issues_open_measurable_week" in message
+    assert constraints.OPEN_ISSUE_FOR_MEASURABLE_WEEK in message
+
+
+@pytest.mark.parametrize(
+    ("kind", "column", "source", "index"),
+    [
+        ("rock", "source_rock_id", "r1", constraints.OPEN_ISSUE_FOR_ROCK),
+        ("todo", "source_todo_id", "t1", constraints.OPEN_ISSUE_FOR_TODO),
+    ],
+)
+def test_no_duplicate_open_issue_from_a_rock_or_todo(seeded, kind, column, source, index):
+    insert = (
+        f"INSERT INTO issues ({ISSUE_COLUMNS}, source_kind, {column}) VALUES"  # noqa: S608
+        f" ('{{id}}', 'team_lead', 'u2', 'From {kind}', '2026-11-11T15:00:00Z', '{kind}',"
+        f" '{source}')"
+    )
+    sqlstate, message = db_error(
+        seeded.database_url, insert.format(id="i_a"), insert.format(id="i_b")
+    )
+    assert sqlstate == UNIQUE, message
+    assert index in message
 
 
 def test_new_issue_allowed_once_the_old_one_is_solved(seeded):
@@ -194,7 +263,7 @@ def test_one_active_meeting_per_team(seeded):
         seeded.database_url, insert.format(id="mt_a"), insert.format(id="mt_b")
     )
     assert sqlstate == UNIQUE
-    assert "ux_meetings_one_active_per_team" in message
+    assert constraints.ONE_ACTIVE_MEETING_PER_TEAM in message
 
 
 @pytest.mark.parametrize(
@@ -272,7 +341,30 @@ def test_readonly_role_can_only_read(seeded):
     assert sqlstate == NO_PRIVILEGE
 
 
-# ---- models and migrations agree --------------------------------------------------------
+def test_role_trigger_functions_pin_search_path(migrated):
+    rows = query(
+        migrated.owner_database_url,
+        "SELECT proname, proconfig FROM pg_proc WHERE proname = ANY(:names)",
+        names=list(constraints.TRIGGER_FUNCTIONS.values()),
+    )
+    assert {name: config for name, config in rows} == {
+        name: ["search_path=public, pg_temp"] for name in constraints.TRIGGER_FUNCTIONS.values()
+    }
+
+
+# ---- models, migrations and named rules agree ---------------------------------------------
+
+
+def test_every_named_rule_exists_in_the_database(migrated):
+    url = migrated.owner_database_url
+    indexes = {
+        r[0] for r in query(url, "SELECT indexname FROM pg_indexes WHERE schemaname = 'public'")
+    }
+    assert set(constraints.UNIQUE_NAMES) <= indexes
+    fks = {r[0] for r in query(url, "SELECT conname FROM pg_constraint WHERE contype = 'f'")}
+    assert constraints.RATER_IS_ATTENDEE in fks
+    functions = {r[0] for r in query(url, "SELECT proname FROM pg_proc")}
+    assert set(constraints.TRIGGER_FUNCTIONS.values()) <= functions
 
 
 def test_models_match_migrations(migrated):
