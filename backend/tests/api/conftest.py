@@ -9,6 +9,7 @@ Each test starts from a freshly reset seed.
 import asyncio
 import contextlib
 import json as jsonlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -50,6 +51,7 @@ async def asgi_request(
     headers: dict[str, str] | None = None,
     cookie: str | None = None,
     disconnect_after: float = 10.0,
+    on_send: Callable[[dict[str, Any]], None] | None = None,
 ) -> Resp:
     path_only, _, query = path.partition("?")
     payload = body if body is not None else (b"" if json is None else jsonlib.dumps(json).encode())
@@ -91,6 +93,8 @@ async def asgi_request(
         return {"type": "http.disconnect"}
 
     async def send(message: dict[str, Any]) -> None:
+        if on_send is not None:
+            on_send(message)
         sent.append(message)
         if message["type"] == "http.response.body" and not message.get("more_body", False):
             finished.set()
@@ -132,6 +136,8 @@ class Client:
 
     def request(self, method: str, path: str, json: Any = None, **kwargs: Any) -> Resp:
         headers = dict(kwargs.pop("headers", {}) or {})
+        # A live stream (GET .../events) ends after this; other responses finish first.
+        kwargs.setdefault("disconnect_after", 1.0)
         if method in ("POST", "PUT", "PATCH", "DELETE"):
             headers = {**CSRF, "content-type": "application/json", **headers}
             if json is None and "body" not in kwargs:

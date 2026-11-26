@@ -20,15 +20,22 @@ PUBLIC = {
     ("GET", "/api/v1/ping"),
     ("GET", "/healthz"),
 }
-OBSERVER_MAY_WRITE = {("POST", "/api/v1/auth/logout")}
+# Observers may sign out and join meetings (plan 3.7); every other write is refused.
+OBSERVER_MAY_WRITE = {
+    ("POST", "/api/v1/auth/logout"),
+    ("POST", "/api/v1/meetings/{meeting_id}/join"),
+}
+# Meeting commands refuse Observers with their own 403 code (not the facilitator).
+OBSERVER_REFUSALS = {"forbidden", "not_facilitator"}
 SAMPLE = {
     "team_id": "team_lead",
     "measurable_id": "m1",
     "week_start": "2026-11-02",
     "issue_id": "i1",
     "todo_id": "t12",
+    "meeting_id": "mt1",
 }
-TEAM_SCOPED = re.compile(r"\{(team_id|issue_id|todo_id)\}")
+TEAM_SCOPED = re.compile(r"\{(team_id|issue_id|todo_id|meeting_id)\}")
 
 
 def operations() -> list[tuple[str, str]]:
@@ -71,7 +78,7 @@ def test_every_private_route_needs_a_session(anon, method, path):
 def test_observers_cannot_write(login, method, path):
     resp = login("u5").request(method, concrete(path))
     assert resp.status == 403, (method, path, resp.body)
-    assert resp.error == "forbidden"
+    assert resp.error in OBSERVER_REFUSALS
 
 
 @pytest.mark.parametrize(("method", "path"), [op for op in OPERATIONS if TEAM_SCOPED.search(op[1])])

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models as m
 from app.authz import CurrentUser, ResourceAccess, TeamAccess
 from app.errors import AppError
+from app.realtime import team_changed
 from app.rules.issues import issue_order
 from app.rules.types import Issue
 from app.rules.weeks import today
@@ -98,7 +99,7 @@ async def list_issues(
 async def create_issue(
     session: AsyncSession, access: TeamAccess, title: str, priority: int | None, now: datetime
 ) -> dict[str, Any]:
-    await bump_team(session, access.team_id)
+    version = await bump_team(session, access.team_id)
     issue_id = new_id("i")
     await session.execute(
         insert(m.Issue).values(
@@ -110,34 +111,37 @@ async def create_issue(
             created_at=now,
         )
     )
+    await team_changed(session, access.team_id, version, "issues", [issue_id])
     return await get_issue(session, issue_id)
 
 
-async def _open_issue_for_change(session: AsyncSession, access: ResourceAccess) -> None:
-    await bump_team(session, access.team_id)
+async def _open_issue_for_change(session: AsyncSession, access: ResourceAccess) -> int:
+    version = await bump_team(session, access.team_id)
     solved_at = await session.scalar(
         select(m.Issue.solved_at).where(m.Issue.id == access.resource_id).with_for_update()
     )
     if solved_at is not None:
         raise AppError(409, "already_solved", "This Issue is already solved.")
+    return version
 
 
 async def set_priority(
     session: AsyncSession, access: ResourceAccess, priority: int | None
 ) -> dict[str, Any]:
-    await _open_issue_for_change(session, access)
+    version = await _open_issue_for_change(session, access)
     await session.execute(
         update(m.Issue)
         .where(m.Issue.id == access.resource_id)
         .values(priority=priority, version=m.Issue.version + 1)
     )
+    await team_changed(session, access.team_id, version, "issues", [access.resource_id])
     return await get_issue(session, access.resource_id)
 
 
 async def solve(
     session: AsyncSession, access: ResourceAccess, note: str, now: datetime
 ) -> dict[str, Any]:
-    await _open_issue_for_change(session, access)
+    version = await _open_issue_for_change(session, access)
     await session.execute(
         update(m.Issue)
         .where(m.Issue.id == access.resource_id)
@@ -148,6 +152,7 @@ async def solve(
             version=m.Issue.version + 1,
         )
     )
+    await team_changed(session, access.team_id, version, "issues", [access.resource_id])
     return await get_issue(session, access.resource_id)
 
 
@@ -160,7 +165,7 @@ async def add_todo(
     now: datetime,
 ) -> str:
     """A follow-up To-Do from an Issue (solved or not). Returns the new To-Do id."""
-    await bump_team(session, access.team_id)
+    version = await bump_team(session, access.team_id)
     if not await is_eligible_owner(session, owner_id, access.team_id):
         raise AppError(
             422,
@@ -180,4 +185,5 @@ async def add_todo(
             created_at=now,
         )
     )
+    await team_changed(session, access.team_id, version, "todos", [todo_id])
     return todo_id

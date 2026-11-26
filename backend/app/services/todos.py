@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models as m
 from app.authz import ResourceAccess
 from app.errors import AppError
+from app.realtime import team_changed
 from app.rules.todos import done_as_of, exists_as_of, is_overdue, todo_completion
 from app.rules.types import Todo
 from app.rules.weeks import last_closed_week, today
@@ -100,7 +101,7 @@ async def set_done(
     session: AsyncSession, access: ResourceAccess, done: bool, now: datetime
 ) -> dict[str, Any]:
     """Idempotent: marking a done To-Do done again keeps its original done_at."""
-    await bump_team(session, access.team_id)
+    version = await bump_team(session, access.team_id)
     current = await session.scalar(
         select(m.Todo.done_at).where(m.Todo.id == access.resource_id).with_for_update()
     )
@@ -114,4 +115,5 @@ async def set_done(
         await session.execute(
             update(m.Todo).where(m.Todo.id == access.resource_id).values(done_at=new_value)
         )
+    await team_changed(session, access.team_id, version, "todos", [access.resource_id])
     return await get_todo(session, access.resource_id, now)

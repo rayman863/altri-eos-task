@@ -299,3 +299,50 @@ class RockOut(Out):
 class RockList(Out):
     quarter: str
     items: list[RockOut]
+
+
+# ---- meetings -------------------------------------------------------------------------------
+
+Section = Literal["scorecard", "ids", "conclude"]
+
+
+class AdvanceIn(In):
+    expected_section: Section
+
+
+class RatingIn(In):
+    rating: Annotated[int, Field(ge=1, le=10, strict=True)]
+
+
+class RatingOut(Out):
+    user_id: str
+    rating: int
+
+
+class ActiveMeeting(Out):
+    meeting: MeetingState | None
+
+
+class SummaryLabels(Out):
+    users: dict[str, str]
+    measurables: dict[str, str]
+    issues: dict[str, str]
+    todos: dict[str, str]
+
+
+class MeetingSummary(Out):
+    """The frozen snapshot (plan 3.9). The core fields are the rules report's meeting
+    format; `labels` holds the names as they were when the meeting ended."""
+
+    meeting_id: str
+    team_id: str
+    facilitator_id: str
+    started_at: datetime
+    ended_at: datetime
+    scorecard_week: date
+    measurable_status: dict[str, Literal["on_track", "off_track", "pending"]]
+    issues_solved: list[str]
+    todos_created: list[str]
+    attendee_ids: list[str]
+    rating: float | None
+    labels: SummaryLabels

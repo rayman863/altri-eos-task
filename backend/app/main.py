@@ -19,6 +19,8 @@ from app.config import Settings, get_settings
 from app.db import application_name, make_engine, make_sessionmaker, pool_status, wait_for_db
 from app.errors import install_error_handlers
 from app.logging import RequestLogMiddleware, setup_logging
+from app.realtime import CLOSE, Hub, Listener, asyncpg_dsn, on_shutdown_signal
+from app.routers import meetings as meeting_routes
 from app.routers import session as session_routes
 from app.routers import teams as team_routes
 from app.security import API_PREFIX, ApiGuardMiddleware
@@ -38,10 +40,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.app_clock_mode == "ticking":
             # One business clock for every worker and across restarts (plan 3.2).
             app.state.clock = await anchored_clock(engine, parse_app_now(settings.app_now))
+        # This worker's LISTEN connection feeds its SSE streams (plan 3.7, 3.12).
+        listener = Listener(
+            asyncpg_dsn(settings.database_url), app.state.hub, application_name("eos-api:listen")
+        )
+        await listener.start()
+        app.state.listener = listener
+        restore_signals = on_shutdown_signal(lambda: app.state.hub.broadcast(CLOSE))
         log.info("api started", extra={"env": settings.app_env, "version": settings.version})
         try:
             yield
         finally:
+            restore_signals()
+            app.state.hub.broadcast(CLOSE)  # open streams end; EventSource reconnects
+            await listener.stop()
             await engine.dispose()
             log.info("api stopped")
 
@@ -63,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # in the database (app/clock_anchor.py), so this process-local one is only a fallback
     # for code that builds the app without running lifespan (tests set their own).
     app.state.clock = clock_from_settings(settings)
+    app.state.hub = Hub()
 
     install_error_handlers(app)
     # Added first = runs inside RequestLogMiddleware, so its refusals carry the request id.
@@ -81,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/healthz", tags=["Health"], summary="Liveness, database and pool check")
     async def healthz(request: Request) -> JSONResponse:
         engine = request.app.state.engine
+        listener = getattr(request.app.state, "listener", None)
 
         async def ping() -> None:
             async with engine.connect() as conn:
@@ -100,6 +114,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "status": status,
                 "db": db_status,
                 "pool": pool_status(engine),
+                # Degraded real-time doesn't fail the healthcheck (the app still works),
+                # but it shows here: "reconnecting" means live updates are paused.
+                "realtime": {
+                    "listener": listener.status if listener else "off",
+                    "streams": request.app.state.hub.stream_count(),
+                },
                 "version": settings.version,
             },
         )
@@ -112,6 +132,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     api.include_router(session_routes.router)
     api.include_router(team_routes.router)
+    api.include_router(meeting_routes.router)
     app.include_router(api)
     return app
 

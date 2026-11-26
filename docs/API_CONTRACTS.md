@@ -1,6 +1,6 @@
 # API Contracts
 
-Planned REST API for the EOS / Level 10 Meeting app. **Status: sections 1 to 8 implemented (Phase 4), with tests built from these examples, except the `429` rate limits (layer L4, they need Redis) and `If-Match` / `409 stale_version` (lost-update bonus). Meetings and live updates (sections 9 and 10) arrive in Phase 5.** FastAPI publishes the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
+Planned REST API for the EOS / Level 10 Meeting app. **Status: sections 1 to 8 implemented (Phase 4), with tests built from these examples, except the `429` rate limits (layer L4, they need Redis) and `If-Match` / `409 stale_version` (lost-update bonus). Sections 9 and 10 (meetings, live updates) are implemented too (Phase 5).** FastAPI publishes the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
 
 Examples use the seed data at the default `APP_NOW` (`2026-11-11T15:00:00Z`, Wednesday 9:00 AM Chicago). They are hand-computed and double as test expectations.
 
@@ -151,7 +151,7 @@ Request `{ "user_id": "u3" }`. Response `200` with `Set-Cookie: eos_session=…;
 
 ### `POST /auth/logout`
 
-Request `{}`. Response `204`, cookie cleared. Logout ends **every** session of that user, in every browser: the signed cookie carries the user's `session_epoch`, logout bumps it, and tokens from an older epoch get `401`. A copied cookie therefore stops working at logout, not 12 h later.
+Request `{}`. Response `204`, cookie cleared. Logout ends **every** session of that user, in every browser: the signed cookie carries the user's `session_epoch`, logout bumps it, and tokens from an older epoch get `401`. A copied cookie therefore stops working at logout, not 12 h later, and the user's open live streams (section 10) are ended on every API worker too.
 
 ### `GET /me`
 
@@ -395,11 +395,11 @@ Request `{}`. The caller becomes facilitator and first attendee; section `scorec
 
 ### `POST /meetings/{meeting_id}/join`
 
-Request `{}`. Idempotent. Anyone with team read access, Observers included. Response `200` with the state.
+Request `{}`. Idempotent: joining again keeps the first `joined_at` and sends no event. Anyone with team read access, Observers included. Response `200` with the state.
 
 ### `POST /meetings/{meeting_id}/advance`
 
-Request `{ "expected_section": "scorecard" }`. Moves forward one section (Scorecard to IDS to Conclude) only if the meeting is still in `expected_section`, so a double click can't skip a section. Response `200` with the new state. Errors: `409 section_changed`, `409 last_section`, `403 not_facilitator`.
+Request `{ "expected_section": "scorecard" }`. Moves forward one section (Scorecard to IDS to Conclude) only if the meeting is still in `expected_section`, so a double click can't skip a section. Response `200` with the new state. Errors: `409 section_changed` (with `details.section`, the current section), `409 last_section`, `403 not_facilitator` (checked before the body), `409 meeting_ended`.
 
 ### `POST /meetings/{meeting_id}/end`
 
@@ -439,7 +439,7 @@ The frozen snapshot (plan 3.9), never recomputed. Its core fields match the rule
 
 ## 10. Live updates: `GET /teams/{team_id}/events`
 
-Server-Sent Events (`text/event-stream`), one stream per team for the Team and Meeting pages. Never gzipped. At most 5 open streams per user. Events are hints: clients re-read data through the REST endpoints above (or re-render on the server, plan 3.17), so an event never carries data a user couldn't fetch.
+Server-Sent Events (`text/event-stream`), one stream per team for the Team and Meeting pages. Sent with `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`, so no proxy (the Next.js one included) gzips or buffers it; verified through the proxy with a 2-minute idle stream. At most 5 open streams per user per API worker (`429 rate_limited`, `Retry-After: 5`). Events are hints: clients re-read data through the REST endpoints above (or re-render on the server, plan 3.17), so an event never carries data a user couldn't fetch.
 
 ```
 retry: 2000
@@ -471,7 +471,7 @@ data: {"meeting_id":"mt_4q8z1c7d"}
 | `meeting.ended` | End | `meeting_id` |
 | `: ping` (comment) | Every 15 s | Keeps proxies from closing the stream |
 
-The event `id` is the team's `cache_version`, which only goes up. On reconnect the browser sends `Last-Event-ID`; the server always answers with a fresh `snapshot`, and clients refresh once.
+The event `id` is the team's `cache_version`, which only goes up. On reconnect the browser sends `Last-Event-ID`; the server always answers with a fresh `snapshot`, and clients refresh once. A worker also resends `snapshot` on an open stream when its `LISTEN` connection had to reconnect (events sent meanwhile are lost), and ends its streams at once on shutdown so `EventSource` reconnects. Events are sent only after the write commits; a rolled-back write sends nothing.
 
 ## 11. Health: `GET /healthz`
 
@@ -481,13 +481,14 @@ The event `id` is the team's `cache_version`, which only goes up. On reconnect t
   "db": "ok",
   "redis": "ok",
   "pool": { "size": 5, "open": 2, "checked_out": 1, "overflow": 0 },
+  "realtime": { "listener": "ok", "streams": 3 },
   "cache": { "hits": 1204, "misses": 87 },
   "activity_backlog": { "rows": 0, "oldest_age_s": 0 },
   "version": "1.0.0"
 }
 ```
 
-`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it, and, with the activity log bonus, when the oldest outbox row is more than 5 minutes old. A database failure gives HTTP 503.
+`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it, and, with the activity log bonus, when the oldest outbox row is more than 5 minutes old. A database failure gives HTTP 503. `realtime` is this worker's `LISTEN` connection (`ok`, or `reconnecting` while live updates are paused) and its number of open SSE streams; it never fails the healthcheck. Today (before layers L3 to L5 and the bonus) the response has `status`, `db`, `pool`, `realtime` and `version`.
 
 ## 11a. Activity log (bonus): `GET /activity`
 

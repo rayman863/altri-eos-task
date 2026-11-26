@@ -21,15 +21,22 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{''.join(secrets.choice(_ID_ALPHABET) for _ in range(8))}"
 
 
-async def bump_team(session: AsyncSession, team_id: str) -> None:
+async def bump_team(session: AsyncSession, team_id: str) -> int:
     """FIRST statement of every team-scoped write (plan 3.14, docs/DB_SCHEMA.md).
 
     It takes the team row lock before any other lock, so concurrent writes in one team
     queue in a fixed order and can't deadlock, and it bumps the cache version so a cached
-    read model built before this write can never be served after it."""
-    await session.execute(
-        update(m.Team).where(m.Team.id == team_id).values(cache_version=m.Team.cache_version + 1)
+    read model built before this write can never be served after it. Returns the new
+    version, which is also the id of the live event this write sends (API contracts 10)."""
+    version = await session.scalar(
+        update(m.Team)
+        .where(m.Team.id == team_id)
+        .values(cache_version=m.Team.cache_version + 1)
+        .returning(m.Team.cache_version)
     )
+    if version is None:
+        raise AppError(404, "not_found", "No such team.")
+    return int(version)
 
 
 async def team_tz(session: AsyncSession, team_id: str) -> ZoneInfo:

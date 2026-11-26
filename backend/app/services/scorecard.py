@@ -12,6 +12,7 @@ from app import models as m
 from app.authz import TeamAccess
 from app.errors import AppError
 from app.jsonutil import decimal_str
+from app.realtime import team_changed
 from app.rules.scorecard import measurable_status
 from app.rules.types import Goal
 from app.rules.weeks import current_week, last_closed_week, week_window
@@ -181,7 +182,7 @@ async def put_score(
     now: datetime,
 ) -> dict[str, Any]:
     """Set a score. Last save wins (the brief); the lost-update bonus adds If-Match later."""
-    await bump_team(session, access.team_id)
+    version = await bump_team(session, access.team_id)
     measurable = await _measurable(session, access.team_id, measurable_id)
     tz = await team_tz(session, access.team_id)
     require_shown_week(week, now, tz)
@@ -203,18 +204,20 @@ async def put_score(
             },
         )
     )
+    await team_changed(session, access.team_id, version, "scores", [measurable_id])
     return await _cell(session, measurable, week, now, tz)
 
 
 async def clear_score(
     session: AsyncSession, access: TeamAccess, measurable_id: str, week: date, now: datetime
 ) -> None:
-    await bump_team(session, access.team_id)
+    version = await bump_team(session, access.team_id)
     await _measurable(session, access.team_id, measurable_id)
     require_shown_week(week, now, await team_tz(session, access.team_id))
     await session.execute(
         delete(m.Score).where(m.Score.measurable_id == measurable_id, m.Score.week_start == week)
     )
+    await team_changed(session, access.team_id, version, "scores", [measurable_id])
 
 
 async def make_issue(
@@ -226,7 +229,7 @@ async def make_issue(
     one finds the winner in step 1. The partial unique index is the backstop for any write
     path that doesn't take that lock: step 3's ON CONFLICT then makes the loser read the
     winner's row."""
-    await bump_team(session, access.team_id)
+    version = await bump_team(session, access.team_id)
     measurable = await _measurable(session, access.team_id, measurable_id)
     tz = await team_tz(session, access.team_id)
 
@@ -272,4 +275,5 @@ async def make_issue(
         if winner is None:  # the winner was solved in between: let the client retry
             raise AppError(409, "conflict", "The Issue changed while it was created. Try again.")
         return await get_issue(session, winner), False
+    await team_changed(session, access.team_id, version, "issues", [inserted])
     return await get_issue(session, inserted), True

@@ -166,3 +166,54 @@ async def require_todo_write(
 
 IssueWrite = Annotated[ResourceAccess, Depends(require_issue_write)]
 TodoWrite = Annotated[ResourceAccess, Depends(require_todo_write)]
+
+
+MeetingIdPath = Annotated[str, Path(pattern=ID_PATTERN, description="Meeting id, e.g. mt1")]
+
+
+async def require_meeting_read(
+    meeting_id: MeetingIdPath, user: SignedIn, session: DbSession
+) -> ResourceAccess:
+    """A meeting resolved to its team, then the team-read check. The meeting service adds
+    the role rules on top (facilitator, attendee, no ratings from Observers)."""
+    team_id = await session.scalar(select(m.Meeting.team_id).where(m.Meeting.id == meeting_id))
+    if team_id is None:
+        raise AppError(404, "not_found", "No such meeting.")
+    access = await check_team(session, user, team_id, write=False)
+    return ResourceAccess(access.user, access.team_id, access.can_write, meeting_id)
+
+
+MeetingRead = Annotated[ResourceAccess, Depends(require_meeting_read)]
+
+
+async def require_meeting_facilitator(
+    meeting_id: MeetingIdPath, user: SignedIn, session: DbSession
+) -> ResourceAccess:
+    """Advance and end: the meeting's facilitator only, checked before the body is read, so
+    nobody else learns anything from validation errors (the service re-checks under lock)."""
+    row = (
+        await session.execute(
+            select(m.Meeting.team_id, m.Meeting.facilitator_id).where(m.Meeting.id == meeting_id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise AppError(404, "not_found", "No such meeting.")
+    access = await check_team(session, user, row.team_id, write=False)
+    if user.id != row.facilitator_id:
+        raise AppError(403, "not_facilitator", "Only the facilitator can do that.")
+    return ResourceAccess(access.user, access.team_id, access.can_write, meeting_id)
+
+
+async def require_meeting_rater(
+    meeting_id: MeetingIdPath, user: SignedIn, session: DbSession
+) -> ResourceAccess:
+    """Rating: an Admin or Team Member who can read the team (attendance is checked by the
+    service). Observers join meetings but never rate them."""
+    access = await require_meeting_read(meeting_id, user, session)
+    if user.role == "observer":
+        raise AppError(403, "forbidden", "Observers can join meetings but not rate them.")
+    return access
+
+
+MeetingFacilitator = Annotated[ResourceAccess, Depends(require_meeting_facilitator)]
+MeetingRater = Annotated[ResourceAccess, Depends(require_meeting_rater)]

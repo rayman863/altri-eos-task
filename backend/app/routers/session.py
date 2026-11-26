@@ -7,6 +7,7 @@ from app import models as m
 from app.authz import Now, SignedIn, load_user
 from app.db import DbSession
 from app.errors import AppError
+from app.realtime import close_user_streams
 from app.schemas import Empty, LoginIn, Me, SeedUser
 from app.security import COOKIE_NAME, sign_session
 from app.services import teams as svc
@@ -58,6 +59,8 @@ async def logout(
     await session.execute(
         update(m.User).where(m.User.id == user.id).values(session_epoch=m.User.session_epoch + 1)
     )
+    # Open live streams were authorized at connect: end them on every worker too.
+    await close_user_streams(session, user.id)
     response.status_code = 204
     response.delete_cookie(
         COOKIE_NAME, path="/", httponly=True, samesite="lax", secure=settings.cookie_secure

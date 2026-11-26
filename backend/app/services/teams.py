@@ -9,10 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models as m
 from app.authz import CurrentUser
-from app.rules.meetings import meeting_rating
 from app.rules.weeks import current_week, last_closed_week, today
-
-SECTION_DURATION_S = {"scorecard": 300, "ids": 3600, "conclude": 600}
+from app.services.meetings import meeting_state
 
 
 async def seed_users(session: AsyncSession) -> list[dict[str, Any]]:
@@ -105,61 +103,4 @@ async def team_detail(session: AsyncSession, team_id: str, now: datetime) -> dic
         "active_meeting": (
             await meeting_state(session, active[team_id], now) if team_id in active else None
         ),
-    }
-
-
-async def meeting_state(session: AsyncSession, meeting_id: str, now: datetime) -> dict[str, Any]:
-    """The meeting state object (docs/API_CONTRACTS.md section 9). Phase 5 adds the
-    commands and the live stream around it; the shape is fixed here."""
-    mt = (
-        await session.execute(
-            select(
-                m.Meeting.id,
-                m.Meeting.team_id,
-                m.Meeting.section,
-                m.Meeting.section_started_at,
-                m.Meeting.started_at,
-                m.Meeting.ended_at,
-                m.Meeting.scorecard_week,
-                m.Meeting.facilitator_id,
-                m.User.name.label("facilitator_name"),
-            )
-            .join(m.User, m.User.id == m.Meeting.facilitator_id)
-            .where(m.Meeting.id == meeting_id)
-        )
-    ).one()
-    attendees = list(
-        await session.execute(
-            select(m.User.id, m.User.name, m.User.role, m.MeetingAttendee.joined_at)
-            .join(m.MeetingAttendee, m.MeetingAttendee.user_id == m.User.id)
-            .where(m.MeetingAttendee.meeting_id == meeting_id)
-            .order_by(m.MeetingAttendee.joined_at, m.User.id)
-        )
-    )
-    ratings = list(
-        await session.execute(
-            select(m.MeetingRating.user_id, m.MeetingRating.rating)
-            .where(m.MeetingRating.meeting_id == meeting_id)
-            .order_by(m.MeetingRating.user_id)
-        )
-    )
-    average = meeting_rating(r.rating for r in ratings)
-    return {
-        "id": mt.id,
-        "team_id": mt.team_id,
-        "status": "active" if mt.ended_at is None else "ended",
-        "section": mt.section,
-        "section_started_at": mt.section_started_at,
-        "section_duration_s": SECTION_DURATION_S[mt.section],
-        "server_now": now,
-        "started_at": mt.started_at,
-        "ended_at": mt.ended_at,
-        "scorecard_week": mt.scorecard_week,
-        "facilitator": {"id": mt.facilitator_id, "name": mt.facilitator_name},
-        "attendees": [
-            {"id": a.id, "name": a.name, "role": a.role, "joined_at": a.joined_at}
-            for a in attendees
-        ],
-        "ratings": [{"user_id": r.user_id, "rating": r.rating} for r in ratings],
-        "average_rating": float(average) if average is not None else None,
     }
