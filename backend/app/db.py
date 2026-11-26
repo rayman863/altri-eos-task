@@ -47,8 +47,11 @@ DbSession = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 
 def pool_status(engine: AsyncEngine) -> dict[str, int]:
-    """Pool counters for /healthz (no hostnames or credentials)."""
+    """Pool counters for /healthz (no hostnames or credentials). A NullPool (tests, CLIs)
+    keeps no connections, so it reports zeros instead of failing the probe."""
     pool = engine.pool
+    if not hasattr(pool, "checkedout"):
+        return {"size": 0, "open": 0, "checked_out": 0, "overflow": 0}
     checked_out = pool.checkedout()  # type: ignore[attr-defined]
     return {
         "size": pool.size(),  # type: ignore[attr-defined]  configured steady size
