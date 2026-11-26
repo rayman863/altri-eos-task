@@ -1,6 +1,6 @@
 # API Contracts
 
-Planned REST API for the EOS / Level 10 Meeting app. **Status: planning.** FastAPI will publish the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
+Planned REST API for the EOS / Level 10 Meeting app. **Status: sections 1 to 8 implemented (Phase 4), with tests built from these examples, except the `429` rate limits (layer L4, they need Redis) and `If-Match` / `409 stale_version` (lost-update bonus). Meetings and live updates (sections 9 and 10) arrive in Phase 5.** FastAPI publishes the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
 
 Examples use the seed data at the default `APP_NOW` (`2026-11-11T15:00:00Z`, Wednesday 9:00 AM Chicago). They are hand-computed and double as test expectations.
 
@@ -151,7 +151,7 @@ Request `{ "user_id": "u3" }`. Response `200` with `Set-Cookie: eos_session=…;
 
 ### `POST /auth/logout`
 
-Request `{}`. Response `204`, cookie cleared.
+Request `{}`. Response `204`, cookie cleared. Logout ends **every** session of that user, in every browser: the signed cookie carries the user's `session_epoch`, logout bumps it, and tokens from an older epoch get `401`. A copied cookie therefore stops working at logout, not 12 h later.
 
 ### `GET /me`
 
@@ -321,7 +321,7 @@ Open To-Dos first (by due date), then done ones (newest first), plus last closed
 }
 ```
 
-Leadership at the seed: overdue = `t12`, `t31`; `t30` (due today) is not overdue. `last_closed_week_completion` is `null` when nothing was due that week.
+Leadership at the seed: overdue = `t12`, `t31`; `t30` (due today) is not overdue. A To-Do made from an Issue has `"source_issue": { "id": "i1", "title": "Hiring pipeline is slow" }`. `last_closed_week_completion` is `null` when nothing was due that week.
 
 ### `PUT /todos/{todo_id}/done`
 
@@ -353,7 +353,7 @@ Current quarter only; read-only.
 }
 ```
 
-(`r2` has 8 Milestones; shortened.) `status` follows the brief's rule, so `r2` is off track because `ms5` is past due, even though it was seeded on track.
+(`r2` has 8 Milestones, ordered by due date; shortened.) `status` follows the brief's rule, so `r2` is off track because `ms5` is past due, even though it was seeded on track.
 
 ## 9. Meetings
 
@@ -383,7 +383,7 @@ Returned by every meeting endpoint and pushed as the `meeting.state` event.
 }
 ```
 
-Durations: Scorecard 300 s, IDS 3600 s, Conclude 600 s. Remaining time = `section_duration_s - (server_now - section_started_at)`; negative means over time. Nothing advances on its own.
+Each `ratings` item is `{ "user_id": "u1", "rating": 8 }` (sorted by user id), and `average_rating` is their mean, half up to one decimal. Durations: Scorecard 300 s, IDS 3600 s, Conclude 600 s. Remaining time = `section_duration_s - (server_now - section_started_at)`; negative means over time. Nothing advances on its own.
 
 ### `GET /teams/{team_id}/meetings/active`
 

@@ -101,6 +101,9 @@ class User(Base):
     name: Mapped[str] = mapped_column(Text)
     email: Mapped[str] = mapped_column(Text)
     role: Mapped[str] = mapped_column(Text)
+    # Bumped by logout: tokens carry the epoch they were issued in, so logging out ends
+    # every session of this user (a signed cookie alone can't be revoked).
+    session_epoch: Mapped[int] = mapped_column(Integer, server_default=text("0"))
 
 
 class Team(Base):

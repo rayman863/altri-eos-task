@@ -66,13 +66,27 @@ def _owner_name(node: ast.expr) -> str | None:
     return None
 
 
+def _imported_names(tree: ast.AST) -> set[str]:
+    """Names a module binds by importing (`import x as clock`, `from datetime import
+    datetime as clock`): such a `clock` is not the injected Clock."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import | ast.ImportFrom):
+            names.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+    return names
+
+
 def _wall_clock_calls(source: str) -> list[int]:
     """Line numbers of wall-clock reads, whatever the import style or alias."""
+    tree = ast.parse(source)
+    clock_is_imported = "clock" in _imported_names(tree)
     lines = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
         attr, owner = node.func.attr, _owner_name(node.func.value)
+        if owner == "clock" and not clock_is_imported:
+            continue  # the sanctioned API: an injected Clock's now() (app.state.clock.now())
         if (
             attr in _ANY_OWNER
             or (attr == "today" and owner in {"date", "datetime"})
@@ -93,6 +107,11 @@ def test_wall_clock_detector_catches_common_forms():
     ]
     assert all(_wall_clock_calls(s) == [1] for s in snippets)
     assert _wall_clock_calls("time.monotonic()\ntime.perf_counter()\nweeks.today(now)") == []
+    # Reading the injected business clock is the point, not a violation.
+    assert _wall_clock_calls("request.app.state.clock.now()\nclock.now()") == []
+    # ...but a `clock` that is really datetime (or any import) is still caught.
+    assert _wall_clock_calls("from datetime import datetime as clock\nclock.now()") == [2]
+    assert _wall_clock_calls("import datetime as clock\nclock.datetime.now()") == [2]
 
 
 def test_nothing_but_clock_py_reads_the_wall_clock():

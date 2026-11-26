@@ -39,6 +39,11 @@ def make_app(*, trusted: tuple[str, ...] = (), body_limit: int = 100) -> FastAPI
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/whoami")
+    async def whoami(request: Request) -> dict[str, str]:
+        request.state.user_id = "u3"  # what app.authz does after verifying the session
+        return {"ok": "yes"}
+
     @app.get("/state")
     async def state(request: Request) -> dict[str, str]:
         return {"client_ip": request.state.client_ip, "request_id": request.state.request_id}
@@ -139,7 +144,7 @@ def test_small_json_bodies_are_logged_with_secrets_redacted(caplog):
 
 def test_headers_from_an_untrusted_peer_are_ignored():
     status, headers, body = call(
-        make_app(trusted=("web-not-running",)),
+        make_app(trusted=("web-not-running.invalid",)),  # .invalid fails fast
         "/state",
         headers=[(b"x-request-id", b"req_spoofed1"), (b"x-forwarded-for", b"10.9.9.9")],
     )
@@ -174,3 +179,34 @@ def test_request_without_any_response_is_not_logged_as_500(caplog):
     record = request_logs(caplog)[-1]
     assert record.getMessage() == "request ended without a response"
     assert record.status is None
+
+
+def test_requests_without_proxy_headers_skip_the_trust_lookup():
+    # A missing `web` container takes seconds to fail in Docker DNS; healthchecks and
+    # direct calls carry no proxy headers, so they must not wait on that lookup.
+    import time
+
+    app = make_app(trusted=("no-such-host.invalid",))
+    started = time.perf_counter()
+    status, _, _ = call(app, "/healthz")
+    assert status == 200
+    assert time.perf_counter() - started < 0.4
+
+
+def test_trust_lookups_are_capped():
+    import time
+
+    app = make_app(trusted=("no-such-host.invalid",))
+    started = time.perf_counter()
+    status, headers, _ = call(app, "/healthz", headers=[(b"x-request-id", b"req_forged01")])
+    assert status == 200
+    assert headers["x-request-id"] != "req_forged01"  # untrusted peer: id not believed
+    assert time.perf_counter() - started < 1.5
+
+
+def test_the_signed_in_user_is_in_the_request_log(caplog):
+    caplog.set_level(logging.INFO)
+    call(make_app(), "/whoami")
+    call(make_app(), "/state")  # no session: user_id is null
+    entries = [r for r in request_logs(caplog) if r.getMessage() == "request"]
+    assert [getattr(r, "user_id", "missing") for r in entries] == ["u3", None]

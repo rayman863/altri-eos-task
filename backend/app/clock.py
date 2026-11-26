@@ -4,9 +4,9 @@ This is the only module allowed to read the wall clock; a test enforces that.
 
 - FrozenClock: now == APP_NOW exactly (tests, rules report). Tests can move it.
 - TickingClock: starts at APP_NOW and advances in real time, so live meeting timers count.
-  now = app_now + (wall clock - real_anchor). Phase 5 stores the anchor pair in the
-  `clock_anchor` table so every API worker shares one origin (plan 3.2, 3.13); until then
-  the anchor is this process's start.
+  now = app_now + (wall clock - real_anchor). The API takes the anchor from the shared
+  `clock_anchor` row (app/clock_anchor.py), so every worker and every restart agree on
+  "now" (plan 3.2, 3.13); without it the anchor is this process's start.
 """
 
 from collections.abc import Callable

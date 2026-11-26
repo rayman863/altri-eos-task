@@ -104,9 +104,12 @@ class TrustedProxies:
     server, by default the compose service `web`). Host names are resolved lazily and
     cached briefly, because a container's IP can change when it restarts."""
 
-    def __init__(self, hosts: tuple[str, ...], ttl_s: float = 30.0) -> None:
+    def __init__(
+        self, hosts: tuple[str, ...], ttl_s: float = 30.0, lookup_timeout_s: float = 0.5
+    ) -> None:
         self.hosts = hosts
         self.ttl_s = ttl_s
+        self.lookup_timeout_s = lookup_timeout_s
         self._ips: frozenset[str] = frozenset()
         self._expires = 0.0
 
@@ -119,8 +122,12 @@ class TrustedProxies:
             ips: set[str] = set()
             for host in self.hosts:
                 try:
-                    infos = await loop.getaddrinfo(host, None)
-                except OSError:
+                    # A name that doesn't exist (yet) can take seconds to fail in Docker's
+                    # DNS; cap it, and cache the miss like a hit.
+                    infos = await asyncio.wait_for(
+                        loop.getaddrinfo(host, None), timeout=self.lookup_timeout_s
+                    )
+                except (OSError, TimeoutError):
                     continue  # not running (yet): trust nothing from that name
                 ips.update(str(info[4][0]) for info in infos)
             self._ips = frozenset(ips)
@@ -162,7 +169,10 @@ class RequestLogMiddleware:
 
         headers = {k.decode().lower(): v.decode(errors="replace") for k, v in scope["headers"]}
         peer = (scope.get("client") or (None,))[0]
-        trusted = await self.trusted.contains(peer)
+        # Only a request that carries proxy headers needs the (DNS-backed) trust check;
+        # healthchecks and direct calls skip it, so a missing `web` can't slow them down.
+        wants_trust = "x-request-id" in headers or "x-forwarded-for" in headers
+        trusted = wants_trust and await self.trusted.contains(peer)
         incoming = headers.get("x-request-id", "") if trusted else ""
         request_id = incoming if _REQUEST_ID_RE.match(incoming) else new_request_id()
         # The proxy appends the address it saw; anything before that came from the client
@@ -246,6 +256,8 @@ class RequestLogMiddleware:
                 "status": status,
                 "duration_ms": round((time.perf_counter() - started) * 1000, 1),
                 "client_ip": client_ip,
+                # Set by the auth dependency (app/authz.py) once the session is verified.
+                "user_id": scope.get("state", {}).get("user_id"),
             }
             if self.log_payloads:
                 entry["request_body"] = _body_for_log(

@@ -55,6 +55,7 @@ erDiagram
         text name
         text email UK
         text role "admin, team_member or observer"
+        int session_epoch "bumped by logout; ends old sessions"
     }
 
     teams {
@@ -318,7 +319,7 @@ Default privileges are set so tables created by later migrations get the same gr
 - **Frozen summaries read `meetings.scorecard_week`**, the week stored when the meeting started, rather than recomputing it, so the summary reviews exactly the week the live meeting showed.
 - **`teams.cache_version`** is incremented in the same transaction as every team-scoped write (scores, Issues, To-Dos, meeting actions), always as the **first** statement, so every write takes the team row lock before any other lock and two writes can't deadlock. Writes within one team queue briefly behind that lock; writes in different teams never wait on each other. Redis cache keys include it, so a cached read model can never be served after the data it was built from changed, even if Redis is outdated or briefly unreachable. See section 3.14 of the development plan.
 - **`version` columns** on `scores` and `issues` support the lost-update bonus (`If-Match` gives `409`). Without that header, the last save wins, as the brief requires for scores.
-- **`clock_anchor`** holds one row: the shared origin of the ticking clock. Every API worker computes `now = app_now + (wall clock - real_now)` from it, so all workers show the same meeting timer and a worker restart does not reset it. The row is replaced when the `APP_NOW` setting changes. Required because the API runs several Uvicorn workers.
+- **`clock_anchor`** holds one row: the shared origin of the ticking clock. Every API worker computes `now = app_now + (wall clock - real_now)` from it, so all workers show the same meeting timer and a worker restart does not reset it. The first API process inserts it; later workers and restarts reuse it, so business time keeps counting forward instead of jumping back to `APP_NOW` (rows stamped before a restart would otherwise look like they are in the future). The row is replaced when the `APP_NOW` setting changes. Built in Phase 4 (`app/clock_anchor.py`).
 
 ## Activity capture triggers (bonus)
 

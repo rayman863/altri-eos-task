@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["debug", "info", "warning", "error", "critical"]
@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     # names or IPs; default: the Next.js server's compose service).
     trusted_proxy_hosts: str = "web"
 
+    # Session and request guards (plan 3.15)
+    # Dev-only default (refused when APP_ENV=production, see the validator below).
+    session_secret: str = "dev-only-session-secret-change-me-0000000000000000"  # noqa: S105
+    session_max_age_s: int = 12 * 3600
+    cookie_secure: bool = False  # true behind HTTPS; plain http://localhost can't use it
+    # Browser origins allowed to write (comma-separated); compose derives the default.
+    web_origin: str = "http://localhost:3000"
+    max_body_bytes: int = 64 * 1024
+
     # Values printed by the startup banner
     public_host: str = "localhost"
     web_port: int = 3000
@@ -59,6 +68,18 @@ class Settings(BaseSettings):
     def _lowercase_level(cls, value: object) -> object:
         # Accept INFO / Info as well; anything not in LogLevel fails with a clear message.
         return value.strip().lower() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _no_dev_secret_in_production(self) -> "Settings":
+        if self.app_env == "production" and (
+            self.session_secret.startswith("dev-only") or len(self.session_secret) < 32
+        ):
+            raise ValueError("SESSION_SECRET must be a real secret of 32+ characters in production")
+        return self
+
+    @property
+    def web_origin_list(self) -> tuple[str, ...]:
+        return tuple(o.strip().rstrip("/") for o in self.web_origin.split(",") if o.strip())
 
     @property
     def trusted_proxy_host_list(self) -> tuple[str, ...]:
