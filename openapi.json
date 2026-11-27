@@ -1,0 +1,2887 @@
+{
+  "components": {
+    "schemas": {
+      "ActiveMeeting": {
+        "properties": {
+          "meeting": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeetingState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "meeting"
+        ],
+        "title": "ActiveMeeting",
+        "type": "object"
+      },
+      "AdvanceIn": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_section": {
+            "enum": [
+              "scorecard",
+              "ids",
+              "conclude"
+            ],
+            "title": "Expected Section",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_section"
+        ],
+        "title": "AdvanceIn",
+        "type": "object"
+      },
+      "Attendee": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "joined_at": {
+            "format": "date-time",
+            "title": "Joined At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "joined_at"
+        ],
+        "title": "Attendee",
+        "type": "object"
+      },
+      "Cell": {
+        "properties": {
+          "open_issue_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Issue Id"
+          },
+          "status": {
+            "enum": [
+              "on_track",
+              "off_track",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "week_start": {
+            "format": "date",
+            "title": "Week Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "week_start",
+          "value",
+          "status",
+          "version",
+          "open_issue_id"
+        ],
+        "title": "Cell",
+        "type": "object"
+      },
+      "ClockOut": {
+        "properties": {
+          "current_week": {
+            "format": "date",
+            "title": "Current Week",
+            "type": "string"
+          },
+          "last_closed_week": {
+            "format": "date",
+            "title": "Last Closed Week",
+            "type": "string"
+          },
+          "now": {
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "now",
+          "today",
+          "current_week",
+          "last_closed_week"
+        ],
+        "title": "ClockOut",
+        "type": "object"
+      },
+      "Company": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "timezone"
+        ],
+        "title": "Company",
+        "type": "object"
+      },
+      "Empty": {
+        "additionalProperties": false,
+        "description": "Writes without fields still send `{}`.",
+        "properties": {},
+        "title": "Empty",
+        "type": "object"
+      },
+      "GoalRange": {
+        "properties": {
+          "max": {
+            "title": "Max",
+            "type": "string"
+          },
+          "min": {
+            "title": "Min",
+            "type": "string"
+          },
+          "type": {
+            "const": "between",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "min",
+          "max"
+        ],
+        "title": "GoalRange",
+        "type": "object"
+      },
+      "GoalValue": {
+        "properties": {
+          "type": {
+            "enum": [
+              "at_least",
+              "at_most",
+              "exactly"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "value"
+        ],
+        "title": "GoalValue",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IssueCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "IssueCreateIn",
+        "type": "object"
+      },
+      "IssueOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "resolution_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Note"
+          },
+          "solved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solved At"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IssueSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "todo_count": {
+            "title": "Todo Count",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "owner",
+          "priority",
+          "created_at",
+          "solved_at",
+          "resolution_note",
+          "source",
+          "todo_count",
+          "version"
+        ],
+        "title": "IssueOut",
+        "type": "object"
+      },
+      "IssuePatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 to 5, or null to clear",
+            "title": "Priority"
+          }
+        },
+        "required": [
+          "priority"
+        ],
+        "title": "IssuePatchIn",
+        "type": "object"
+      },
+      "IssueSolveIn": {
+        "additionalProperties": false,
+        "properties": {
+          "resolution_note": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Resolution Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution_note"
+        ],
+        "title": "IssueSolveIn",
+        "type": "object"
+      },
+      "IssueSource": {
+        "properties": {
+          "kind": {
+            "const": "measurable_week",
+            "title": "Kind",
+            "type": "string"
+          },
+          "measurable_id": {
+            "title": "Measurable Id",
+            "type": "string"
+          },
+          "measurable_name": {
+            "title": "Measurable Name",
+            "type": "string"
+          },
+          "week_start": {
+            "format": "date",
+            "title": "Week Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "measurable_id",
+          "measurable_name",
+          "week_start"
+        ],
+        "title": "IssueSource",
+        "type": "object"
+      },
+      "IssueTodoIn": {
+        "additionalProperties": false,
+        "properties": {
+          "owner_id": {
+            "pattern": "^[a-z0-9_]{1,64}$",
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "owner_id"
+        ],
+        "title": "IssueTodoIn",
+        "type": "object"
+      },
+      "LoginIn": {
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "pattern": "^[a-z0-9_]{1,64}$",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "LoginIn",
+        "type": "object"
+      },
+      "MadeIssue": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "issue": {
+            "$ref": "#/components/schemas/IssueOut"
+          }
+        },
+        "required": [
+          "created",
+          "issue"
+        ],
+        "title": "MadeIssue",
+        "type": "object"
+      },
+      "Me": {
+        "properties": {
+          "clock": {
+            "$ref": "#/components/schemas/ClockOut"
+          },
+          "company": {
+            "$ref": "#/components/schemas/Company"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/MeTeam"
+            },
+            "title": "Teams",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/MeUser"
+          }
+        },
+        "required": [
+          "user",
+          "teams",
+          "company",
+          "clock"
+        ],
+        "title": "Me",
+        "type": "object"
+      },
+      "MeTeam": {
+        "properties": {
+          "can_write": {
+            "title": "Can Write",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "can_write"
+        ],
+        "title": "MeTeam",
+        "type": "object"
+      },
+      "MeUser": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role"
+        ],
+        "title": "MeUser",
+        "type": "object"
+      },
+      "MeasurableRow": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/Cell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalValue"
+              },
+              {
+                "$ref": "#/components/schemas/GoalRange"
+              }
+            ],
+            "title": "Goal"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "unit",
+          "owner",
+          "goal",
+          "cells"
+        ],
+        "title": "MeasurableRow",
+        "type": "object"
+      },
+      "MeetingState": {
+        "properties": {
+          "attendees": {
+            "items": {
+              "$ref": "#/components/schemas/Attendee"
+            },
+            "title": "Attendees",
+            "type": "array"
+          },
+          "average_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rating"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "facilitator": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ratings": {
+            "items": {
+              "$ref": "#/components/schemas/Rating"
+            },
+            "title": "Ratings",
+            "type": "array"
+          },
+          "scorecard_week": {
+            "format": "date",
+            "title": "Scorecard Week",
+            "type": "string"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "section_duration_s": {
+            "title": "Section Duration S",
+            "type": "integer"
+          },
+          "section_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Started At"
+          },
+          "server_now": {
+            "format": "date-time",
+            "title": "Server Now",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "ended"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "team_id",
+          "status",
+          "section",
+          "section_started_at",
+          "section_duration_s",
+          "server_now",
+          "started_at",
+          "ended_at",
+          "scorecard_week",
+          "facilitator",
+          "attendees",
+          "ratings",
+          "average_rating"
+        ],
+        "title": "MeetingState",
+        "type": "object"
+      },
+      "MeetingSummary": {
+        "description": "The frozen snapshot (plan 3.9). The core fields are the rules report's meeting\nformat; `labels` holds the names as they were when the meeting ended.",
+        "properties": {
+          "attendee_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Attendee Ids",
+            "type": "array"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "title": "Ended At",
+            "type": "string"
+          },
+          "facilitator_id": {
+            "title": "Facilitator Id",
+            "type": "string"
+          },
+          "issues_solved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issues Solved",
+            "type": "array"
+          },
+          "labels": {
+            "$ref": "#/components/schemas/SummaryLabels"
+          },
+          "measurable_status": {
+            "additionalProperties": {
+              "enum": [
+                "on_track",
+                "off_track",
+                "pending"
+              ],
+              "type": "string"
+            },
+            "title": "Measurable Status",
+            "type": "object"
+          },
+          "meeting_id": {
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "scorecard_week": {
+            "format": "date",
+            "title": "Scorecard Week",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "todos_created": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Todos Created",
+            "type": "array"
+          }
+        },
+        "required": [
+          "meeting_id",
+          "team_id",
+          "facilitator_id",
+          "started_at",
+          "ended_at",
+          "scorecard_week",
+          "measurable_status",
+          "issues_solved",
+          "todos_created",
+          "attendee_ids",
+          "rating",
+          "labels"
+        ],
+        "title": "MeetingSummary",
+        "type": "object"
+      },
+      "Member": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "title": "Member",
+        "type": "object"
+      },
+      "MilestoneOut": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "boolean"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "past_due": {
+            "title": "Past Due",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "due_date",
+          "done",
+          "past_due"
+        ],
+        "title": "MilestoneOut",
+        "type": "object"
+      },
+      "Rating": {
+        "properties": {
+          "rating": {
+            "title": "Rating",
+            "type": "integer"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "rating"
+        ],
+        "title": "Rating",
+        "type": "object"
+      },
+      "RatingIn": {
+        "additionalProperties": false,
+        "properties": {
+          "rating": {
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Rating",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "title": "RatingIn",
+        "type": "object"
+      },
+      "RatingOut": {
+        "properties": {
+          "rating": {
+            "title": "Rating",
+            "type": "integer"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "rating"
+        ],
+        "title": "RatingOut",
+        "type": "object"
+      },
+      "RockList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RockOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "quarter": {
+            "title": "Quarter",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quarter",
+          "items"
+        ],
+        "title": "RockList",
+        "type": "object"
+      },
+      "RockOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "milestones": {
+            "items": {
+              "$ref": "#/components/schemas/MilestoneOut"
+            },
+            "title": "Milestones",
+            "type": "array"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "progress_percent": {
+            "title": "Progress Percent",
+            "type": "integer"
+          },
+          "seeded_status": {
+            "title": "Seeded Status",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "on_track",
+              "off_track",
+              "complete"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "owner",
+          "seeded_status",
+          "status",
+          "progress_percent",
+          "milestones"
+        ],
+        "title": "RockOut",
+        "type": "object"
+      },
+      "ScoreIn": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "A string or a number, e.g. \"11\" or 4.5",
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "ScoreIn",
+        "type": "object"
+      },
+      "Scorecard": {
+        "properties": {
+          "current_week": {
+            "format": "date",
+            "title": "Current Week",
+            "type": "string"
+          },
+          "last_closed_week": {
+            "format": "date",
+            "title": "Last Closed Week",
+            "type": "string"
+          },
+          "measurables": {
+            "items": {
+              "$ref": "#/components/schemas/MeasurableRow"
+            },
+            "title": "Measurables",
+            "type": "array"
+          },
+          "weeks": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Weeks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "weeks",
+          "current_week",
+          "last_closed_week",
+          "measurables"
+        ],
+        "title": "Scorecard",
+        "type": "object"
+      },
+      "SeedUser": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/TeamRef"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role",
+          "teams"
+        ],
+        "title": "SeedUser",
+        "type": "object"
+      },
+      "SourceIssueRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "SourceIssueRef",
+        "type": "object"
+      },
+      "SummaryLabels": {
+        "properties": {
+          "issues": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Issues",
+            "type": "object"
+          },
+          "measurables": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Measurables",
+            "type": "object"
+          },
+          "todos": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Todos",
+            "type": "object"
+          },
+          "users": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Users",
+            "type": "object"
+          }
+        },
+        "required": [
+          "users",
+          "measurables",
+          "issues",
+          "todos"
+        ],
+        "title": "SummaryLabels",
+        "type": "object"
+      },
+      "TeamDetail": {
+        "properties": {
+          "active_meeting": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeetingState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eligible_owners": {
+            "items": {
+              "$ref": "#/components/schemas/UserRef"
+            },
+            "title": "Eligible Owners",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "members",
+          "eligible_owners",
+          "active_meeting"
+        ],
+        "title": "TeamDetail",
+        "type": "object"
+      },
+      "TeamListItem": {
+        "properties": {
+          "active_meeting_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Meeting Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "active_meeting_id"
+        ],
+        "title": "TeamListItem",
+        "type": "object"
+      },
+      "TeamRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "TeamRef",
+        "type": "object"
+      },
+      "TodoDoneIn": {
+        "additionalProperties": false,
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "done"
+        ],
+        "title": "TodoDoneIn",
+        "type": "object"
+      },
+      "TodoList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TodoOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "last_closed_week_completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeekCompletion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "last_closed_week_completion"
+        ],
+        "title": "TodoList",
+        "type": "object"
+      },
+      "TodoOut": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done At"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "overdue": {
+            "title": "Overdue",
+            "type": "boolean"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "source_issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceIssueRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "owner",
+          "due_date",
+          "done_at",
+          "overdue",
+          "source_issue",
+          "created_at"
+        ],
+        "title": "TodoOut",
+        "type": "object"
+      },
+      "UserRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "UserRef",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WeekCompletion": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "due": {
+            "title": "Due",
+            "type": "integer"
+          },
+          "meets_target": {
+            "title": "Meets Target",
+            "type": "boolean"
+          },
+          "rate_percent": {
+            "title": "Rate Percent",
+            "type": "integer"
+          },
+          "week_start": {
+            "format": "date",
+            "title": "Week Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "week_start",
+          "due",
+          "done",
+          "rate_percent",
+          "meets_target"
+        ],
+        "title": "WeekCompletion",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Scorecard, Rocks, To-Dos, Issues and the live Level 10 Meeting. Contracts: docs/API_CONTRACTS.md.",
+    "title": "EOS Level 10 API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign in as a seeded user",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout_api_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Empty"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign out (ends every session of this user, in every browser)",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/api/v1/auth/users": {
+      "get": {
+        "operationId": "users_api_v1_auth_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SeedUser"
+                  },
+                  "title": "Response Users Api V1 Auth Users Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Seeded users (switcher)",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/api/v1/issues/{issue_id}": {
+      "patch": {
+        "operationId": "patch_issue_api_v1_issues__issue_id__patch",
+        "parameters": [
+          {
+            "description": "Issue id, e.g. i5",
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "description": "Issue id, e.g. i5",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssuePatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Issue",
+        "tags": [
+          "Issues"
+        ]
+      }
+    },
+    "/api/v1/issues/{issue_id}/solve": {
+      "post": {
+        "operationId": "solve_issue_api_v1_issues__issue_id__solve_post",
+        "parameters": [
+          {
+            "description": "Issue id, e.g. i5",
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "description": "Issue id, e.g. i5",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueSolveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Solve Issue",
+        "tags": [
+          "Issues"
+        ]
+      }
+    },
+    "/api/v1/issues/{issue_id}/todos": {
+      "post": {
+        "operationId": "add_issue_todo_api_v1_issues__issue_id__todos_post",
+        "parameters": [
+          {
+            "description": "Issue id, e.g. i5",
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "description": "Issue id, e.g. i5",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueTodoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Issue Todo",
+        "tags": [
+          "Issues"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "me_api_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "The signed-in user, teams and server clock",
+        "tags": [
+          "Session"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}": {
+      "get": {
+        "operationId": "get_meeting_api_v1_meetings__meeting_id__get",
+        "parameters": [
+          {
+            "description": "Meeting id, e.g. mt1",
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "description": "Meeting id, e.g. mt1",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Meeting",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/advance": {
+      "post": {
+        "operationId": "advance_meeting_api_v1_meetings__meeting_id__advance_post",
+        "parameters": [
+          {
+            "description": "Meeting id, e.g. mt1",
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "description": "Meeting id, e.g. mt1",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvanceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Advance Meeting",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/end": {
+      "post": {
+        "operationId": "end_meeting_api_v1_meetings__meeting_id__end_post",
+        "parameters": [
+          {
+            "description": "Meeting id, e.g. mt1",
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "description": "Meeting id, e.g. mt1",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Empty"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "End Meeting",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/join": {
+      "post": {
+        "operationId": "join_meeting_api_v1_meetings__meeting_id__join_post",
+        "parameters": [
+          {
+            "description": "Meeting id, e.g. mt1",
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "description": "Meeting id, e.g. mt1",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Empty"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Join Meeting",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/rating": {
+      "put": {
+        "operationId": "rate_meeting_api_v1_meetings__meeting_id__rating_put",
+        "parameters": [
+          {
+            "description": "Meeting id, e.g. mt1",
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "description": "Meeting id, e.g. mt1",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rate Meeting",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/summary": {
+      "get": {
+        "operationId": "meeting_summary_api_v1_meetings__meeting_id__summary_get",
+        "parameters": [
+          {
+            "description": "Meeting id, e.g. mt1",
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "description": "Meeting id, e.g. mt1",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Meeting Summary",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/api/v1/ping": {
+      "get": {
+        "operationId": "ping_api_v1_ping_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Ping Api V1 Ping Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Round-trip check through the web proxy",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/api/v1/teams": {
+      "get": {
+        "operationId": "list_teams_api_v1_teams_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TeamListItem"
+                  },
+                  "title": "Response List Teams Api V1 Teams Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Teams",
+        "tags": [
+          "Teams"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}": {
+      "get": {
+        "operationId": "get_team_api_v1_teams__team_id__get",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Team",
+        "tags": [
+          "Teams"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/events": {
+      "get": {
+        "description": "Authorized once at connect, like any team read. The request's own DB session ends\nwhen this function returns (before streaming), and each snapshot uses a short-lived\nsession, so open streams never hold pool connections (plan 3.12).",
+        "operationId": "events_api_v1_teams__team_id__events_get",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "An SSE stream"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Server-Sent Events: snapshot, team.changed, meeting.state, meeting.ended",
+        "tags": [
+          "Meetings",
+          "Live updates"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/issues": {
+      "get": {
+        "operationId": "list_issues_api_v1_teams__team_id__issues_get",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "unsolved",
+              "enum": [
+                "unsolved",
+                "solved"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IssueOut"
+                  },
+                  "title": "Response List Issues Api V1 Teams  Team Id  Issues Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Issues",
+        "tags": [
+          "Issues"
+        ]
+      },
+      "post": {
+        "operationId": "create_issue_api_v1_teams__team_id__issues_post",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Issue",
+        "tags": [
+          "Issues"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/measurables/{measurable_id}/scores/{week_start}": {
+      "delete": {
+        "operationId": "delete_score_api_v1_teams__team_id__measurables__measurable_id__scores__week_start__delete",
+        "parameters": [
+          {
+            "description": "Measurable id, e.g. m1",
+            "in": "path",
+            "name": "measurable_id",
+            "required": true,
+            "schema": {
+              "description": "Measurable id, e.g. m1",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Measurable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The week's Monday, e.g. 2026-11-02",
+            "in": "path",
+            "name": "week_start",
+            "required": true,
+            "schema": {
+              "description": "The week's Monday, e.g. 2026-11-02",
+              "format": "date",
+              "title": "Week Start",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear a score",
+        "tags": [
+          "Scorecard"
+        ]
+      },
+      "put": {
+        "operationId": "put_score_api_v1_teams__team_id__measurables__measurable_id__scores__week_start__put",
+        "parameters": [
+          {
+            "description": "Measurable id, e.g. m1",
+            "in": "path",
+            "name": "measurable_id",
+            "required": true,
+            "schema": {
+              "description": "Measurable id, e.g. m1",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Measurable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The week's Monday, e.g. 2026-11-02",
+            "in": "path",
+            "name": "week_start",
+            "required": true,
+            "schema": {
+              "description": "The week's Monday, e.g. 2026-11-02",
+              "format": "date",
+              "title": "Week Start",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScoreIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cell"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set a score",
+        "tags": [
+          "Scorecard"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/measurables/{measurable_id}/scores/{week_start}/issue": {
+      "post": {
+        "operationId": "make_issue_api_v1_teams__team_id__measurables__measurable_id__scores__week_start__issue_post",
+        "parameters": [
+          {
+            "description": "Measurable id, e.g. m1",
+            "in": "path",
+            "name": "measurable_id",
+            "required": true,
+            "schema": {
+              "description": "Measurable id, e.g. m1",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Measurable Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The week's Monday, e.g. 2026-11-02",
+            "in": "path",
+            "name": "week_start",
+            "required": true,
+            "schema": {
+              "description": "The week's Monday, e.g. 2026-11-02",
+              "format": "date",
+              "title": "Week Start",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Empty"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MadeIssue"
+                }
+              }
+            },
+            "description": "An open Issue already existed (`created: false`)"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MadeIssue"
+                }
+              }
+            },
+            "description": "A new Issue was created (`created: true`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Make it an Issue (201 created, 200 existing)",
+        "tags": [
+          "Scorecard"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/meetings": {
+      "post": {
+        "operationId": "start_meeting_api_v1_teams__team_id__meetings_post",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Empty"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Meeting",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/meetings/active": {
+      "get": {
+        "operationId": "active_meeting_api_v1_teams__team_id__meetings_active_get",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveMeeting"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Active Meeting",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/rocks": {
+      "get": {
+        "operationId": "list_rocks_api_v1_teams__team_id__rocks_get",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RockList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Rocks",
+        "tags": [
+          "Rocks"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/scorecard": {
+      "get": {
+        "operationId": "get_scorecard_api_v1_teams__team_id__scorecard_get",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scorecard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Scorecard",
+        "tags": [
+          "Scorecard"
+        ]
+      }
+    },
+    "/api/v1/teams/{team_id}/todos": {
+      "get": {
+        "operationId": "list_todos_api_v1_teams__team_id__todos_get",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Todos",
+        "tags": [
+          "To-Dos"
+        ]
+      }
+    },
+    "/api/v1/todos/{todo_id}/done": {
+      "put": {
+        "operationId": "set_todo_done_api_v1_todos__todo_id__done_put",
+        "parameters": [
+          {
+            "description": "To-Do id, e.g. t12",
+            "in": "path",
+            "name": "todo_id",
+            "required": true,
+            "schema": {
+              "description": "To-Do id, e.g. t12",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Todo Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TodoDoneIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Todo Done",
+        "tags": [
+          "To-Dos"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness, database and pool check",
+        "tags": [
+          "Health"
+        ]
+      }
+    }
+  }
+}
