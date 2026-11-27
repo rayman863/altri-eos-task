@@ -21,6 +21,21 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  // Basic security headers for every page (plan 3.15). The nonce-based CSP arrives with
+  // layer L4, because a nonce CSP needs proxy.ts to mint a nonce per request.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "same-origin" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     // Browser-facing proxy to FastAPI: same-origin cookies, no CORS (plan 3.5).
     return [{ source: "/api/:path*", destination: `${apiInternalUrl}/api/:path*` }];

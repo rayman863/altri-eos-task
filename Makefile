@@ -1,6 +1,6 @@
 # Convenience targets. Every target is a plain docker compose command, listed in the
 # README too, so nothing here is required (Windows has no make by default).
-.PHONY: up down reset build logs info lint test seed rules-report rules-report-at
+.PHONY: up down reset build logs info lint test seed rules-report rules-report-at openapi
 
 # Not `up --wait`: it fails whenever the one-shot `info` container has already exited.
 # `info` only starts once api and web are healthy, so waiting for it is the readiness check.
@@ -39,6 +39,11 @@ rules-report:  ## regenerate the committed rules_report.json (scratch eos_report
 
 rules-report-at: ## print the report at another date, without touching the committed file: make rules-report-at NOW=2026-11-18T15:00:00Z
 	docker compose --progress quiet run --rm --build -e APP_NOW=$(NOW) rules-report
+
+openapi:       ## regenerate the committed openapi.json and the frontend's typed client from the API
+	docker compose run --rm --no-deps -T tests python -m app.openapi_export > openapi.json.tmp
+	mv openapi.json.tmp openapi.json
+	cd frontend && npm run gen:api
 
 info:          ## print the startup banner again
 	docker compose logs --no-log-prefix info

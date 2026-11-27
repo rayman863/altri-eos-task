@@ -5,6 +5,8 @@ import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import "./globals.css";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 export const metadata: Metadata = {
   title: "EOS Level 10",
   description: "Scorecard, Rocks, To-Dos, Issues and the weekly Level 10 Meeting.",
@@ -16,7 +18,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <TooltipProvider>{children}</TooltipProvider>
+      </body>
     </html>
   );
 }

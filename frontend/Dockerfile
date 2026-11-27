@@ -25,7 +25,10 @@ ENV API_INTERNAL_URL=$API_INTERNAL_URL
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
+COPY --from=build --chown=node:node /app/edge-headers.cjs ./edge-headers.cjs
 USER node
 EXPOSE 3000
-# Plain Node server for now; platform layer L2 switches to pm2-runtime cluster mode.
-CMD ["node", "server.js"]
+# Plain Node server for now; platform layer L2 switches to pm2-runtime cluster mode (it must
+# keep the -r preload, as node_args). edge-headers.cjs makes Next the edge for client
+# addresses: see the file.
+CMD ["node", "-r", "./edge-headers.cjs", "server.js"]
