@@ -1,6 +1,6 @@
 # Convenience targets. Every target is a plain docker compose command, listed in the
 # README too, so nothing here is required (Windows has no make by default).
-.PHONY: up down reset build logs info lint test test-backend test-e2e seed rules-report rules-report-at openapi
+.PHONY: up down reset build logs info lint test test-backend test-web test-e2e seed rules-report rules-report-at openapi
 
 # Not `up --wait`: it fails whenever the one-shot `info` container has already exited.
 # `info` only starts once api and web are healthy, so waiting for it is the readiness check.
@@ -21,12 +21,18 @@ build:         ## rebuild images
 logs:          ## follow all logs (Dozzle at http://localhost:8080 is nicer)
 	docker compose logs -f
 
-test:          ## everything, unattended: backend suite, then the browser E2E on its own stack
+test:          ## everything, unattended: backend suite, web server tests, then the browser E2E on its own stack
 	$(MAKE) test-backend
+	$(MAKE) test-web
 	$(MAKE) test-e2e
 
 test-backend:  ## rules, database and API tests against eos_test (APP_NOW frozen at the seed's now)
 	docker compose run --rm tests
+
+# Node built-ins only, so no npm install: the preloads (edge headers, stream hang-up on stop)
+# and the PM2 cluster config.
+test-web:      ## web server tests: edge-headers, stream-shutdown, ecosystem config
+	docker run --rm -v "$(CURDIR)/frontend:/app:ro" -w /app node:24.22.3-alpine npm run --silent test:server
 
 # The E2E stack (api-e2e, web-e2e) runs on eos_test with a frozen clock and is reseeded on
 # every run, so it never touches the demo data. It is stopped afterwards, pass or fail.

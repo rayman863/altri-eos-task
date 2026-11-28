@@ -7,6 +7,7 @@ app instances with their own hub and listener on the same database.
 
 import asyncio
 import json
+import os
 import time
 from typing import Any
 
@@ -377,3 +378,4 @@ def test_healthz_reports_realtime(app, seeded):
     assert bare["realtime"] == {"listener": "off", "streams": 0}
     assert live["realtime"] == {"listener": "ok", "streams": 1}
     assert live["status"] == "ok"
+    assert live["worker"] == os.getpid()  # the worker that answered (several share a port)

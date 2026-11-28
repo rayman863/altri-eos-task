@@ -134,6 +134,19 @@ def test_production_refuses_the_dev_secret():
     assert Settings(app_env="production", session_secret="s" * 40).session_secret == "s" * 40
 
 
+def test_a_settings_error_never_prints_the_secrets_it_was_given():
+    """The error is logged at startup (app/preflight.py), so it names the problem only."""
+    with pytest.raises(ValueError, match="SESSION_SECRET") as refused:
+        Settings(
+            app_env="production",
+            session_secret="short-real-secret",
+            database_url="postgresql+asyncpg://eos_app:db-password-123@db:5432/eos",
+        )
+    shown = str(refused.value)  # what a logged traceback shows
+    assert "short-real-secret" not in shown
+    assert "db-password-123" not in shown
+
+
 # ---- request guards ---------------------------------------------------------------------------
 
 

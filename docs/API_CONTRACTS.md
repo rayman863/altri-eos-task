@@ -125,9 +125,9 @@ Access is checked before anything else, including the cache (plan 3.14). An inac
 | `POST /meetings/{meeting_id}/end` | Facilitator | 200 | 403 `not_facilitator`, 409 `meeting_ended` |
 | `PUT /meetings/{meeting_id}/rating` | Rater | 200 | 403 `not_attendee`, 409 `meeting_ended`, 422 |
 | `GET /meetings/{meeting_id}/summary` | Team read | 200 | 403, 404, 409 `meeting_not_ended` |
-| `GET /teams/{team_id}/events` | Team read | 200 SSE stream | 403, 429 (more than 5 streams) |
+| `GET /teams/{team_id}/events` | Team read | 200 SSE stream | 403, 429 (more than 5 streams per user on one API worker) |
 | `GET /activity` (bonus) | Admin | 200 | 403, 422, 503 `activity_unavailable` |
-| `GET /healthz` (root, not under `/api/v1`) | Public | 200 | 503 if the database is unreachable |
+| `GET /healthz` (root, not under `/api/v1`) | Public | 200 `{status, db, pool, realtime, worker, version}`: `pool` and `realtime` (listener state, open streams) are for the Uvicorn worker that answered, whose process id is `worker`, so repeated probes can differ | 503 if the database is unreachable |
 | `GET /api/v1/ping` | Public | 200 `{"pong": "ok"}` | Round-trip check through the web proxy (`http://localhost:3000/api/v1/ping`) |
 
 ## 3. Session
@@ -471,7 +471,7 @@ data: {"meeting_id":"mt_4q8z1c7d"}
 | `meeting.ended` | End | `meeting_id` |
 | `: ping` (comment) | Every 15 s | Keeps proxies from closing the stream |
 
-The event `id` is the team's `cache_version`, which only goes up. On reconnect the browser sends `Last-Event-ID`; the server always answers with a fresh `snapshot`, and clients refresh once. A worker also resends `snapshot` on an open stream when its `LISTEN` connection had to reconnect (events sent meanwhile are lost), and ends its streams at once on shutdown so `EventSource` reconnects. Events are sent only after the write commits; a rolled-back write sends nothing.
+The event `id` is the team's `cache_version`, which only goes up. On reconnect the browser sends `Last-Event-ID`; the server always answers with a fresh `snapshot`, and clients refresh once. A worker also resends `snapshot` on an open stream when its `LISTEN` connection had to reconnect (events sent meanwhile are lost), and ends its streams at once on shutdown so `EventSource` reconnects; the Next.js server does the same for the streams it proxies (`stream-shutdown.cjs`), so stopping or reloading a web worker never waits on an open tab. Events are sent only after the write commits; a rolled-back write sends nothing.
 
 ## 11. Health: `GET /healthz`
 
@@ -484,11 +484,12 @@ The event `id` is the team's `cache_version`, which only goes up. On reconnect t
   "realtime": { "listener": "ok", "streams": 3 },
   "cache": { "hits": 1204, "misses": 87 },
   "activity_backlog": { "rows": 0, "oldest_age_s": 0 },
+  "worker": 8,
   "version": "1.0.0"
 }
 ```
 
-`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it, and, with the activity log bonus, when the oldest outbox row is more than 5 minutes old. A database failure gives HTTP 503. `realtime` is this worker's `LISTEN` connection (`ok`, or `reconnecting` while live updates are paused) and its number of open SSE streams; it never fails the healthcheck. Today (before layers L3 to L5 and the bonus) the response has `status`, `db`, `pool`, `realtime` and `version`.
+`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it, and, with the activity log bonus, when the oldest outbox row is more than 5 minutes old. A database failure gives HTTP 503. `realtime` is this worker's `LISTEN` connection (`ok`, or `reconnecting` while live updates are paused) and its number of open SSE streams; it never fails the healthcheck. `worker` is the process id of the Uvicorn worker that answered (layer L1): `pool` and `realtime` are that worker's, so repeated probes can differ. Today (before layers L3 to L5 and the bonus) the response has `status`, `db`, `pool`, `realtime`, `worker` and `version`.
 
 ## 11a. Activity log (bonus): `GET /activity`
 

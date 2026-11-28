@@ -6,6 +6,7 @@
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -120,6 +121,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "listener": listener.status if listener else "off",
                     "streams": request.app.state.hub.stream_count(),
                 },
+                # Which Uvicorn worker answered (layer L1): pool and stream counts are per
+                # worker, so repeated probes can show different numbers.
+                "worker": os.getpid(),
                 "version": settings.version,
             },
         )

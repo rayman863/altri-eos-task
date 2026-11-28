@@ -1,0 +1,8 @@
+{
+  "name": "eos-web-pm2",
+  "private": true,
+  "description": "PM2 for the web runtime image only (layer L2, plan 3.11); locked so the image build is reproducible",
+  "dependencies": {
+    "pm2": "7.1.2"
+  }
+}

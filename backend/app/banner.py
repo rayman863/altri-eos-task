@@ -56,6 +56,15 @@ def _user_table(users: list[tuple[str, str, str, str, str]]) -> list[str]:
     return [line(header), *(line(u) for u in users)]
 
 
+def web_processes(s: Settings) -> str:
+    """How `web` runs (layer L2): a PM2 cluster, or one plain Node process."""
+    if s.web_runner == "node":
+        return "node x1"
+    if s.web_instances == "max":
+        return "pm2 cluster, one worker per CPU thread"
+    return f"pm2 cluster x{s.web_instances}"
+
+
 def render(s: Settings, users: list[tuple[str, str, str, str, str]] | None) -> str:
     host = s.public_host
     rule = "=" * WIDTH
@@ -64,7 +73,7 @@ def render(s: Settings, users: list[tuple[str, str, str, str, str]] | None) -> s
         rule,
         f" EOS L10 app is ready        APP_NOW {s.app_now} ({s.app_clock_mode})",
         thin,
-        f" App (Next.js)   http://{host}:{s.web_port}",
+        f" App (Next.js)   http://{host}:{s.web_port}    {web_processes(s)}",
         f" API (FastAPI)   http://{host}:{s.api_port}    uvicorn x{s.api_workers}",
         f" API docs        http://{host}:{s.api_port}/docs    ReDoc: /redoc",
         f" Logs (Dozzle)   http://{host}:{s.logs_port}",

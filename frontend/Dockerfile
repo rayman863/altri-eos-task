@@ -14,21 +14,31 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
+# PM2 for the runtime image only, from its own lockfile (pm2/), so the build is reproducible.
+FROM node:24.22.3-alpine AS pm2
+WORKDIR /opt/pm2
+COPY pm2/package.json pm2/package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
 FROM node:24.22.3-alpine AS runner
 WORKDIR /app
+# PM2_HOME in /tmp: PM2 keeps its socket and pid files there, outside the app directory.
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
-    PORT=3000
+    PORT=3000 \
+    WEB_RUNNER=pm2 \
+    WEB_INSTANCES=2 \
+    PM2_HOME=/tmp/.pm2 \
+    PATH="/opt/pm2/node_modules/.bin:$PATH"
+COPY --from=pm2 /opt/pm2/node_modules /opt/pm2/node_modules
 ARG API_INTERNAL_URL=http://api:8000
 ENV API_INTERNAL_URL=$API_INTERNAL_URL
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
-COPY --from=build --chown=node:node /app/edge-headers.cjs ./edge-headers.cjs
+COPY --from=build --chown=node:node /app/edge-headers.cjs /app/stream-shutdown.cjs /app/ecosystem.config.cjs /app/start.sh ./
 USER node
 EXPOSE 3000
-# Plain Node server for now; platform layer L2 switches to pm2-runtime cluster mode (it must
-# keep the -r preload, as node_args). edge-headers.cjs makes Next the edge for client
-# addresses: see the file.
-CMD ["node", "-r", "./edge-headers.cjs", "server.js"]
+# WEB_RUNNER=pm2 (PM2 cluster, WEB_INSTANCES workers) or node (one process): see start.sh.
+CMD ["sh", "./start.sh"]

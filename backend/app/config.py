@@ -10,7 +10,9 @@ LogLevel = Literal["debug", "info", "warning", "error", "critical"]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=None, extra="ignore")
+    # hide_input_in_errors: a settings error is logged at startup, and its input holds every
+    # value read from the environment, passwords and the session secret included.
+    model_config = SettingsConfigDict(env_file=None, extra="ignore", hide_input_in_errors=True)
 
     app_env: Literal["development", "test", "production"] = "development"
     version: str = "0.1.0"
@@ -61,7 +63,13 @@ class Settings(BaseSettings):
     api_port: int = 8000
     db_port: int = 5433
     logs_port: int = 8080
-    api_workers: int = 1
+    # Process counts (layers L1 and L2, plan 3.11 and 3.13). The Dockerfiles read the same
+    # variables; these copies only label the banner. The web ones are plain strings on
+    # purpose: the web container checks them (start.sh), and a value only the web server
+    # understands, such as WEB_INSTANCES=max, must never stop the API from starting.
+    api_workers: int = 2
+    web_runner: str = "pm2"
+    web_instances: str = "2"
 
     @field_validator("log_level", mode="before")
     @classmethod

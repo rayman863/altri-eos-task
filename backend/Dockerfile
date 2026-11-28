@@ -34,5 +34,8 @@ USER app
 
 EXPOSE 8000
 
-# API_WORKERS stays 1 until platform layer L1 (plan section 5).
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-1} --no-access-log --timeout-graceful-shutdown 20"]
+# API_WORKERS Uvicorn processes share port 8000 (plan 3.13, layer L1); 1 turns it off.
+# The preflight runs one worker's startup first: Uvicorn's parent restarts workers that
+# exit, forever, so a worker that can't start would otherwise loop instead of stopping
+# the container with the error (app/preflight.py).
+CMD ["sh", "-c", "python -m app.preflight && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-2} --no-access-log --timeout-graceful-shutdown 20"]
