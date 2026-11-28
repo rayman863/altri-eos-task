@@ -16,6 +16,7 @@ import sys
 from datetime import datetime, timedelta
 
 import pytest
+from redis import Redis
 
 import app.cache as cache_module
 from app.cache import (
@@ -272,13 +273,30 @@ def test_the_seed_stops_when_it_cannot_replace_the_generation(seeded):
 # ---- the cache itself ------------------------------------------------------------------------
 
 
-def scratch_cache(seeded) -> Cache:
-    """A cache on the real Redis under a namespace of its own."""
-    return Cache(seeded.redis_url, f"eos:scratch-{secrets.token_hex(4)}")
+@pytest.fixture
+def scratch_cache(seeded):
+    """`scratch_cache()` -> a cache on the real Redis under a namespace of its own. Its keys
+    are removed after the test: the generation key has no TTL, so it would otherwise stay
+    in Redis for good, one per test."""
+    made: list[str] = []
+
+    def make() -> Cache:
+        made.append(f"eos:scratch-{secrets.token_hex(4)}")
+        return Cache(seeded.redis_url, made[-1])
+
+    yield make
+    client = Redis.from_url(seeded.redis_url)
+    try:
+        for prefix in made:
+            keys = list(client.scan_iter(match=f"{prefix}:*", count=1000))
+            if keys:
+                client.unlink(*keys)
+    finally:
+        client.close()
 
 
-def test_one_miss_computes_once_however_many_ask(seeded):
-    cache = scratch_cache(seeded)
+def test_one_miss_computes_once_however_many_ask(scratch_cache):
+    cache = scratch_cache()
     calls = 0
 
     async def compute() -> dict:
@@ -297,8 +315,8 @@ def test_one_miss_computes_once_however_many_ask(seeded):
     assert calls == 1
 
 
-def test_until_turns_a_hit_into_a_miss_at_that_moment(seeded):
-    cache = scratch_cache(seeded)
+def test_until_turns_a_hit_into_a_miss_at_that_moment(scratch_cache):
+    cache = scratch_cache()
     now = datetime.fromisoformat("2026-11-11T15:00:00+00:00")
     calls = 0
 
@@ -319,8 +337,8 @@ def test_until_turns_a_hit_into_a_miss_at_that_moment(seeded):
     assert asyncio.run(main()) == [1, 1, 2]
 
 
-def test_a_failing_compute_releases_its_lock_and_caches_nothing(seeded):
-    cache = scratch_cache(seeded)
+def test_a_failing_compute_releases_its_lock_and_caches_nothing(scratch_cache):
+    cache = scratch_cache()
 
     async def boom() -> None:
         raise RuntimeError("database down")
@@ -339,9 +357,11 @@ def test_a_failing_compute_releases_its_lock_and_caches_nothing(seeded):
     assert waited < 0.5  # no wait on a lock left behind
 
 
-def test_a_lock_that_expired_and_was_taken_is_not_released_by_its_first_owner(seeded, monkeypatch):
+def test_a_lock_that_expired_and_was_taken_is_not_released_by_its_first_owner(
+    scratch_cache, monkeypatch
+):
     monkeypatch.setattr(cache_module, "LOCK_MS", 100)
-    cache = scratch_cache(seeded)
+    cache = scratch_cache()
 
     async def main() -> bytes | None:
         reader = RequestCache(cache, {})
@@ -349,7 +369,8 @@ def test_a_lock_that_expired_and_was_taken_is_not_released_by_its_first_owner(se
 
         async def slow() -> str:
             await asyncio.sleep(0.25)  # outlives its 100 ms lock...
-            await cache.call(lambda r: r.set(lock, b"theirs"))  # ...which someone else took
+            # ...which someone else took, with a lock TTL of their own
+            await cache.call(lambda r: r.set(lock, b"theirs", px=60_000))
             return "v"
 
         await reader.get_or_set("k", 60, slow)
@@ -360,8 +381,8 @@ def test_a_lock_that_expired_and_was_taken_is_not_released_by_its_first_owner(se
     assert asyncio.run(main()) == b"theirs"
 
 
-def test_waiters_stop_waiting_as_soon_as_the_computing_request_fails(seeded):
-    cache = scratch_cache(seeded)
+def test_waiters_stop_waiting_as_soon_as_the_computing_request_fails(scratch_cache):
+    cache = scratch_cache()
 
     async def boom() -> None:
         await asyncio.sleep(0.1)
