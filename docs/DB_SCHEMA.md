@@ -1,6 +1,6 @@
 # Database Schema
 
-Planned Postgres schema for the EOS / Level 10 Meeting app. **Status: planning.** Alembic migrations will be generated from this design, and this file must be updated with any change.
+Postgres schema for the EOS / Level 10 Meeting app. **Status: built** (Alembic migrations `0001` to `0005` in `backend/alembic/versions/`); the activity-log objects (bonus) are designed here but not built. This file must be updated with any change.
 
 GitHub renders the Mermaid diagram below directly. Use the diagram's zoom and pan controls, or open the raw file in any Mermaid viewer.
 
@@ -86,7 +86,7 @@ erDiagram
         text measurable_id PK, FK
         date week_start PK "Monday in company time"
         numeric value "never float"
-        int version "lost-update bonus"
+        int version "If-Match check; from score_version_seq, never repeats"
         text updated_by FK "nullable"
         timestamptz updated_at
     }
@@ -123,7 +123,7 @@ erDiagram
         date source_week_start "nullable, Monday"
         text source_rock_id FK "nullable, bonus"
         text source_todo_id FK "nullable, bonus"
-        int version "lost-update bonus"
+        int version "If-Match check; +1 per change"
     }
 
     todos {
@@ -318,7 +318,7 @@ Default privileges are set so tables created by later migrations get the same gr
 - **The seed runs once per database.** `migrate` calls it on every `docker compose up`, but it does nothing if the seed company already exists (the whole seed is one transaction, so that row means "fully seeded"). Re-inserting "missing" rows instead would bring back rows deleted in the app.
 - **Frozen summaries read `meetings.scorecard_week`**, the week stored when the meeting started, rather than recomputing it, so the summary reviews exactly the week the live meeting showed.
 - **`teams.cache_version`** is incremented in the same transaction as every team-scoped write (scores, Issues, To-Dos, meeting actions), always as the **first** statement, so every write takes the team row lock before any other lock and two writes can't deadlock. Writes within one team queue briefly behind that lock; writes in different teams never wait on each other. Redis cache keys include it, so a cached read model can never be served after the data it was built from changed, even if Redis is outdated or briefly unreachable. See section 3.14 of the development plan.
-- **`version` columns** on `scores` and `issues` support the lost-update bonus (`If-Match` gives `409`). Without that header, the last save wins, as the brief requires for scores.
+- **`version` columns** on `scores` and `issues` carry the lost-update check (bonus, built): `If-Match` with a stale version gives `409 stale_version`. Without that header, the last save wins, as the brief says. Issue versions go up by one per change. Score versions come from the `score_version_seq` sequence (migration `0005`, owned by `scores.version`, starting above every existing version), because clearing a score deletes its row: a per-row counter would start again at 1 and an old version could match a newer value.
 - **`clock_anchor`** holds one row: the shared origin of the ticking clock. Every API worker computes `now = app_now + (wall clock - real_now)` from it, so all workers show the same meeting timer and a worker restart does not reset it. The first API process inserts it; later workers and restarts reuse it, so business time keeps counting forward instead of jumping back to `APP_NOW` (rows stamped before a restart would otherwise look like they are in the future). The row is replaced when the `APP_NOW` setting changes. Built in Phase 4 (`app/clock_anchor.py`).
 
 ## Activity capture triggers (bonus)

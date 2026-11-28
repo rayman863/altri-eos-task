@@ -125,7 +125,13 @@ export function PrioritySelect({
           startTransition(async () => {
             setShown(next);
             const result = await action(next);
-            setError(result.ok ? null : result.error.message);
+            setError(
+              result.ok
+                ? null
+                : result.error.code === "stale_version"
+                  ? "Someone else changed it. It now shows theirs."
+                  : result.error.message,
+            );
           });
         }}
         className="border-input bg-background h-8 rounded-md border px-1.5 text-xs disabled:opacity-70"

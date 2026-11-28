@@ -1583,6 +1583,24 @@
               "title": "Issue Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Optional lost-update check: the version you last saw, e.g. \"3\" (`\"0\"` for an empty score cell, `*` for \"exists\"). A mismatch gives 409 `stale_version`.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional lost-update check: the version you last saw, e.g. \"3\" (`\"0\"` for an empty score cell, `*` for \"exists\"). A mismatch gives 409 `stale_version`.",
+              "title": "If-Match"
+            }
           }
         ],
         "requestBody": {
@@ -1605,6 +1623,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "`stale_version`: If-Match no longer matches; `details.current`"
           },
           "422": {
             "content": {
@@ -2371,11 +2392,32 @@
               "title": "Team Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Optional lost-update check: the version you last saw, e.g. \"3\" (`\"0\"` for an empty score cell, `*` for \"exists\"). A mismatch gives 409 `stale_version`.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional lost-update check: the version you last saw, e.g. \"3\" (`\"0\"` for an empty score cell, `*` for \"exists\"). A mismatch gives 409 `stale_version`.",
+              "title": "If-Match"
+            }
           }
         ],
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "`stale_version`: If-Match no longer matches; `details.current`"
           },
           "422": {
             "content": {
@@ -2431,6 +2473,24 @@
               "title": "Team Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Optional lost-update check: the version you last saw, e.g. \"3\" (`\"0\"` for an empty score cell, `*` for \"exists\"). A mismatch gives 409 `stale_version`.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional lost-update check: the version you last saw, e.g. \"3\" (`\"0\"` for an empty score cell, `*` for \"exists\"). A mismatch gives 409 `stale_version`.",
+              "title": "If-Match"
+            }
           }
         ],
         "requestBody": {
@@ -2453,6 +2513,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "`stale_version`: If-Match no longer matches; `details.current`"
           },
           "422": {
             "content": {

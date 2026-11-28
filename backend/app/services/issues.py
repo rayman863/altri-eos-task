@@ -10,10 +10,12 @@ from app import models as m
 from app.authz import CurrentUser, ResourceAccess, TeamAccess
 from app.cache import RequestCache, Until, next_change
 from app.errors import AppError
+from app.preconditions import accepts, stale
 from app.realtime import team_changed
 from app.rules.issues import issue_order
 from app.rules.types import Issue
 from app.rules.weeks import today
+from app.schemas import IssueOut
 from app.services.common import bump_team, is_eligible_owner, new_id, team_state, team_tz
 
 NEW_TODO_DUE_DAYS = 7  # plan 3.5: today in company time + 7 days
@@ -146,9 +148,21 @@ async def _open_issue_for_change(session: AsyncSession, access: ResourceAccess) 
 
 
 async def set_priority(
-    session: AsyncSession, access: ResourceAccess, priority: int | None
+    session: AsyncSession,
+    access: ResourceAccess,
+    priority: int | None,
+    expected: frozenset[int] | None = None,
 ) -> dict[str, Any]:
+    """Change the priority. Last save wins, unless the client sent If-Match
+    (app/preconditions.py): checked here, under the team lock `_open_issue_for_change` took."""
     version = await _open_issue_for_change(session, access)
+    if expected is not None:
+        current = await session.scalar(
+            select(m.Issue.version).where(m.Issue.id == access.resource_id)
+        )
+        if not accepts(expected, current or 0):
+            issue = IssueOut.model_validate(await get_issue(session, access.resource_id))
+            raise stale(issue.model_dump(mode="json"), "Issue")
     await session.execute(
         update(m.Issue)
         .where(m.Issue.id == access.resource_id)

@@ -10,6 +10,9 @@ import { cn } from "@/lib/utils";
 import { makeIssue, saveScore } from "./actions";
 import { ScoreValue } from "./schemas";
 
+// Short enough for the cell; the page then refreshes to the value someone else saved.
+const STALE_SCORE = "Someone else changed this score. It now shows their value.";
+
 type Cell = Schemas["Cell"];
 
 /**
@@ -37,6 +40,13 @@ export function ScoreCell({
   const input = useRef<HTMLInputElement>(null);
   // Enter or Escape already handled the edit; ignore the blur that follows unmounting.
   const handled = useRef(false);
+  // The version of the value the user started editing from. A live update can refresh `cell`
+  // while the box is open; saving with that newer version would overwrite a value the user
+  // never saw, so the save checks against this one (If-Match, bonus 1).
+  const editedFrom = useRef<number | null>(null);
+  // ...and its value: leaving the box unchanged saves nothing, even if `cell` was refreshed
+  // underneath (otherwise a blur would write the stale value back over a newer one).
+  const startValue = useRef<string | null>(null);
 
   function save(raw: string) {
     const parsed = ScoreValue.safeParse(raw);
@@ -47,11 +57,11 @@ export function ScoreCell({
     }
     setEditing(false);
     setError(null);
-    if ((parsed.data ?? null) === (cell.value ?? null)) return;
+    if ((parsed.data ?? null) === startValue.current) return;
     startTransition(async () => {
       setShown(parsed.data);
-      const result = await saveScore(teamId, measurableId, cell.week_start, raw);
-      if (!result.ok) setError(result.error.message);
+      const result = await saveScore(teamId, measurableId, cell.week_start, editedFrom.current, raw);
+      if (!result.ok) setError(result.error.code === "stale_version" ? STALE_SCORE : result.error.message);
     });
   }
 
@@ -106,6 +116,8 @@ export function ScoreCell({
         disabled={!editable || pending}
         onClick={() => {
           handled.current = false;
+          editedFrom.current = cell.version ?? null;
+          startValue.current = cell.value ?? null;
           setEditing(true);
         }}
         aria-label={label}

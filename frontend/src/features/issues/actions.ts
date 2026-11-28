@@ -45,12 +45,21 @@ export async function createIssue(teamId: string, _prev: FormState, form: FormDa
   );
 }
 
-export async function setPriority(issueId: string, priority: number | null): Promise<ActionResult> {
+/** `version` is the one the user saw, sent as If-Match: a priority someone else changed
+ * meanwhile is refused (`stale_version`) and shown, not overwritten (bonus 1). */
+export async function setPriority(
+  issueId: string,
+  version: number,
+  priority: number | null,
+): Promise<ActionResult> {
   const api = await apiClient();
   const result = await write(
-    api.PATCH("/api/v1/issues/{issue_id}", { params: { path: { issue_id: issueId } }, body: { priority } }),
+    api.PATCH("/api/v1/issues/{issue_id}", {
+      params: { path: { issue_id: issueId }, header: { "If-Match": `"${version}"` } },
+      body: { priority },
+    }),
   );
-  if (result.ok) refresh();
+  if (result.ok || result.error.code === "stale_version") refresh();
   return result.ok ? { ok: true } : result;
 }
 

@@ -121,7 +121,7 @@ def test_setting_a_score_recomputes_the_cell_and_bumps_the_version(login, seeded
     new = client.put(SCORE.format(mid="m1", week="2026-11-09"), {"value": 4.5})
     assert (
         new.body["value"] == "4.5"
-        and new.body["version"] == 1
+        and new.body["version"] > resp.body["version"]  # versions never repeat (migration 0005)
         and new.body["status"] == "off_track"
     )
     assert cache_version(seeded) == before + 2  # every team write bumps it first

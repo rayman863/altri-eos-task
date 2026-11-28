@@ -1112,7 +1112,10 @@ export interface operations {
     patch_issue_api_v1_issues__issue_id__patch: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional lost-update check: the version you last saw, e.g. "3" (`"0"` for an empty score cell, `*` for "exists"). A mismatch gives 409 `stale_version`. */
+                "If-Match"?: string | null;
+            };
             path: {
                 /** @description Issue id, e.g. i5 */
                 issue_id: string;
@@ -1133,6 +1136,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["IssueOut"];
                 };
+            };
+            /** @description `stale_version`: If-Match no longer matches; `details.current` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -1624,7 +1634,10 @@ export interface operations {
     put_score_api_v1_teams__team_id__measurables__measurable_id__scores__week_start__put: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional lost-update check: the version you last saw, e.g. "3" (`"0"` for an empty score cell, `*` for "exists"). A mismatch gives 409 `stale_version`. */
+                "If-Match"?: string | null;
+            };
             path: {
                 /** @description Measurable id, e.g. m1 */
                 measurable_id: string;
@@ -1650,6 +1663,13 @@ export interface operations {
                     "application/json": components["schemas"]["Cell"];
                 };
             };
+            /** @description `stale_version`: If-Match no longer matches; `details.current` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1664,7 +1684,10 @@ export interface operations {
     delete_score_api_v1_teams__team_id__measurables__measurable_id__scores__week_start__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional lost-update check: the version you last saw, e.g. "3" (`"0"` for an empty score cell, `*` for "exists"). A mismatch gives 409 `stale_version`. */
+                "If-Match"?: string | null;
+            };
             path: {
                 /** @description Measurable id, e.g. m1 */
                 measurable_id: string;
@@ -1679,6 +1702,13 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `stale_version`: If-Match no longer matches; `details.current` */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

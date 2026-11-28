@@ -8,6 +8,7 @@ from fastapi import APIRouter, Path, Query, Response
 from app.authz import IssueWrite, MeasurableIdPath, Now, SignedIn, TeamRead, TeamWrite, TodoWrite
 from app.cache import ReadCache
 from app.db import DbSession
+from app.preconditions import IfMatchHeader, etag, expected_versions
 from app.schemas import (
     Cell,
     Empty,
@@ -55,7 +56,12 @@ async def get_scorecard(access: TeamRead, session: DbSession, now: Now, cache: R
     return await scorecard.scorecard(session, access.team_id, now, cache)
 
 
-@router.put(SCORE_PATH, response_model=Cell, tags=["Scorecard"], summary="Set a score")
+STALE = {409: {"description": "`stale_version`: If-Match no longer matches; `details.current`"}}
+
+
+@router.put(
+    SCORE_PATH, response_model=Cell, responses=STALE, tags=["Scorecard"], summary="Set a score"
+)
 async def put_score(
     access: TeamWrite,
     measurable_id: MeasurableIdPath,
@@ -63,19 +69,30 @@ async def put_score(
     body: ScoreIn,
     session: DbSession,
     now: Now,
+    response: Response,
+    if_match: IfMatchHeader = None,
 ) -> dict:
-    return await scorecard.put_score(session, access, measurable_id, week_start, body.value, now)
+    cell = await scorecard.put_score(
+        session, access, measurable_id, week_start, body.value, now, expected_versions(if_match)
+    )
+    response.headers.update(etag(cell["version"]))
+    return cell
 
 
-@router.delete(SCORE_PATH, status_code=204, tags=["Scorecard"], summary="Clear a score")
+@router.delete(
+    SCORE_PATH, status_code=204, responses=STALE, tags=["Scorecard"], summary="Clear a score"
+)
 async def delete_score(
     access: TeamWrite,
     measurable_id: MeasurableIdPath,
     week_start: WeekPath,
     session: DbSession,
     now: Now,
+    if_match: IfMatchHeader = None,
 ) -> Response:
-    await scorecard.clear_score(session, access, measurable_id, week_start, now)
+    await scorecard.clear_score(
+        session, access, measurable_id, week_start, now, expected_versions(if_match)
+    )
     return Response(status_code=204)
 
 
@@ -128,9 +145,17 @@ async def create_issue(
     return await issues.create_issue(session, access, body.title, body.priority, now)
 
 
-@router.patch("/issues/{issue_id}", response_model=IssueOut, tags=["Issues"])
-async def patch_issue(access: IssueWrite, body: IssuePatchIn, session: DbSession) -> dict:
-    return await issues.set_priority(session, access, body.priority)
+@router.patch("/issues/{issue_id}", response_model=IssueOut, responses=STALE, tags=["Issues"])
+async def patch_issue(
+    access: IssueWrite,
+    body: IssuePatchIn,
+    session: DbSession,
+    response: Response,
+    if_match: IfMatchHeader = None,
+) -> dict:
+    issue = await issues.set_priority(session, access, body.priority, expected_versions(if_match))
+    response.headers.update(etag(issue["version"]))
+    return issue
 
 
 @router.post("/issues/{issue_id}/solve", response_model=IssueOut, tags=["Issues"])

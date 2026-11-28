@@ -8,11 +8,15 @@ import { ScoreValue } from "./schemas";
 
 type ScorePath = { team_id: string; measurable_id: string; week_start: string };
 
-/** Set or clear (empty input) one score. FastAPI recomputes the cell's status. */
+/** Set or clear (empty input) one score. FastAPI recomputes the cell's status. `version` is the
+ * one the user saw (null: the cell was empty), sent as If-Match: if someone else saved the cell
+ * meanwhile, the API refuses with `stale_version` instead of overwriting their value (bonus 1),
+ * and the page refreshes to show it. */
 export async function saveScore(
   teamId: string,
   measurableId: string,
   week: string,
+  version: number | null,
   raw: string,
 ): Promise<ActionResult> {
   const parsed = ScoreValue.safeParse(raw);
@@ -29,17 +33,22 @@ export async function saveScore(
     };
   }
   const path: ScorePath = { team_id: teamId, measurable_id: measurableId, week_start: week };
+  const header = { "If-Match": `"${version ?? 0}"` };
   const api = await apiClient();
   const result =
     parsed.data === null
-      ? await write(api.DELETE("/api/v1/teams/{team_id}/measurables/{measurable_id}/scores/{week_start}", { params: { path } }))
+      ? await write(
+          api.DELETE("/api/v1/teams/{team_id}/measurables/{measurable_id}/scores/{week_start}", {
+            params: { path, header },
+          }),
+        )
       : await write(
           api.PUT("/api/v1/teams/{team_id}/measurables/{measurable_id}/scores/{week_start}", {
-            params: { path },
+            params: { path, header },
             body: { value: parsed.data },
           }),
         );
-  if (result.ok) refresh();
+  if (result.ok || result.error.code === "stale_version") refresh();
   return result.ok ? { ok: true } : result;
 }
 

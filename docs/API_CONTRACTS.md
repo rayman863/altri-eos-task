@@ -1,6 +1,6 @@
 # API Contracts
 
-Planned REST API for the EOS / Level 10 Meeting app. **Status: sections 1 to 8 implemented (Phase 4), with tests built from these examples, except `If-Match` / `409 stale_version` (lost-update bonus). The `429` rate limits came with layer L4. Sections 9 and 10 (meetings, live updates) are implemented too (Phase 5).** FastAPI publishes the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
+Planned REST API for the EOS / Level 10 Meeting app. **Status: sections 1 to 8 implemented (Phase 4), with tests built from these examples. The `429` rate limits came with layer L4, and `If-Match` / `409 stale_version` with the lost-update bonus. Sections 9 and 10 (meetings, live updates) are implemented too (Phase 5).** FastAPI publishes the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
 
 Examples use the seed data at the default `APP_NOW` (`2026-11-11T15:00:00Z`, Wednesday 9:00 AM Chicago). They are hand-computed and double as test expectations.
 
@@ -55,7 +55,7 @@ Every error, whatever the status, has the same shape:
 | 409 | `section_changed` | `advance` sent with a stale `expected_section` |
 | 409 | `last_section` | `advance` while already in Conclude (end it instead) |
 | 409 | `already_solved` | Solving a solved Issue |
-| 409 | `stale_version` | Only with the lost-update bonus: `If-Match` no longer matches; `details.current` holds the current row |
+| 409 | `stale_version` | `If-Match` no longer matches (lost-update bonus, section 5); `details.current` holds the current cell or Issue |
 | 413 | `payload_too_large` | Body over 64 KB |
 | 415 | `unsupported_media_type` | Write that isn't `application/json` |
 | 422 | `validation_failed` | Field errors; `details.fields` is a list of `{loc, msg}` |
@@ -106,12 +106,12 @@ Access is checked before anything else, including the cache (plan 3.14). An inac
 | `GET /teams` | Signed in | 200 | |
 | `GET /teams/{team_id}` | Team read | 200 | 403, 404 |
 | `GET /teams/{team_id}/scorecard` | Team read | 200 | 403 |
-| `PUT /teams/{team_id}/measurables/{measurable_id}/scores/{week_start}` | Team write | 200 | 403, 404, 422 |
-| `DELETE /teams/{team_id}/measurables/{measurable_id}/scores/{week_start}` | Team write | 204 | 403, 404, 422 |
+| `PUT /teams/{team_id}/measurables/{measurable_id}/scores/{week_start}` | Team write | 200 | 403, 404, 409 `stale_version` (with `If-Match`), 422 |
+| `DELETE /teams/{team_id}/measurables/{measurable_id}/scores/{week_start}` | Team write | 204 | 403, 404, 409 `stale_version` (with `If-Match`), 422 |
 | `POST /teams/{team_id}/measurables/{measurable_id}/scores/{week_start}/issue` | Team write | 201 created, 200 existing | 403, 422 `cell_not_off_track`, 429 |
 | `GET /teams/{team_id}/issues?status=unsolved\|solved` | Team read | 200 | 403 |
 | `POST /teams/{team_id}/issues` | Team write | 201 | 403, 422 |
-| `PATCH /issues/{issue_id}` | Team write | 200 | 403, 404, 409 `already_solved`, 422 |
+| `PATCH /issues/{issue_id}` | Team write | 200 | 403, 404, 409 `already_solved`, 409 `stale_version` (with `If-Match`), 422 |
 | `POST /issues/{issue_id}/solve` | Team write | 200 | 403, 404, 409 `already_solved`, 422 |
 | `POST /issues/{issue_id}/todos` | Team write | 201 | 403, 404, 422 `owner_not_eligible` |
 | `GET /teams/{team_id}/todos` | Team read | 200 | 403 |
@@ -235,7 +235,7 @@ For an Admin, `teams` lists every team. `can_write` is a display hint; the serve
 
 ### `PUT …/measurables/{measurable_id}/scores/{week_start}`
 
-Request `{ "value": "11" }` (or `11`). Response `200` with the updated cell (new `value`, recomputed `status`, `version`). Last save wins. With the lost-update bonus, an optional `If-Match: "<version>"` header gives `409 stale_version` when out of date.
+Request `{ "value": "11" }` (or `11`). Response `200` with the updated cell (new `value`, recomputed `status`, `version`) and an `ETag: "<version>"` header. Without `If-Match`, last save wins (the brief). **Lost-update check (bonus):** send `If-Match: "<version>"` with the version the user saw, `"0"` for an empty cell; if anyone saved or cleared the cell since, the answer is `409 stale_version` with the current cell in `details.current`, and nothing is written. `DELETE` (clear) takes the same header. Also accepted: `W/"3"`, a comma-separated list, and `*` (the score must exist); anything else is `422` on `["header", "If-Match"]`. A score's `version` is opaque and never repeats, even after a clear and a new value (a database sequence), so an old version can never match again.
 
 ### `DELETE …/measurables/{measurable_id}/scores/{week_start}`
 
@@ -281,7 +281,7 @@ Request `{ "title": "Trucks idle on Mondays", "priority": 3 }` (`priority` optio
 
 ### `PATCH /issues/{issue_id}`
 
-Request `{ "priority": 5 }` or `{ "priority": null }`. Response `200` with the Issue. Optional `If-Match` with the lost-update bonus.
+Request `{ "priority": 5 }` or `{ "priority": null }`. Response `200` with the Issue and `ETag: "<version>"`. Optional `If-Match: "<version>"` (lost-update bonus): `409 stale_version` with the current Issue in `details.current` if the priority changed since.
 
 ### `POST /issues/{issue_id}/solve`
 

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,10 +13,12 @@ from app.authz import TeamAccess
 from app.cache import RequestCache
 from app.errors import AppError
 from app.jsonutil import decimal_str
+from app.preconditions import accepts, stale
 from app.realtime import team_changed
 from app.rules.scorecard import measurable_status
 from app.rules.types import Goal
 from app.rules.weeks import current_week, last_closed_week, week_window
+from app.schemas import Cell
 from app.services.common import (
     bump_team,
     new_id,
@@ -189,6 +191,27 @@ async def _cell(
     )
 
 
+async def _require_version(
+    session: AsyncSession,
+    measurable: Any,
+    week: date,
+    now: datetime,
+    tz: Any,
+    expected: frozenset[int] | None,
+) -> None:
+    """Lost-update check (app/preconditions.py), under the team lock taken by the caller."""
+    if expected is None:
+        return
+    current = await session.scalar(
+        select(m.Score.version).where(
+            m.Score.measurable_id == measurable.id, m.Score.week_start == week
+        )
+    )
+    if not accepts(expected, current or 0):
+        cell = await _cell(session, measurable, week, now, tz)
+        raise stale(Cell.model_validate(cell).model_dump(mode="json"), "score")
+
+
 async def put_score(
     session: AsyncSession,
     access: TeamAccess,
@@ -196,16 +219,20 @@ async def put_score(
     week: date,
     value: Decimal,
     now: datetime,
+    expected: frozenset[int] | None = None,
 ) -> dict[str, Any]:
-    """Set a score. Last save wins (the brief); the lost-update bonus adds If-Match later."""
+    """Set a score. Last save wins (the brief), unless the client sent If-Match."""
     version = await bump_team(session, access.team_id)
     measurable = await _measurable(session, access.team_id, measurable_id)
     tz = await team_tz(session, access.team_id)
     require_shown_week(week, now, tz)
+    await _require_version(session, measurable, week, now, tz, expected)
     statement = insert(m.Score).values(
         measurable_id=measurable_id,
         week_start=week,
         value=value,
+        # Never repeats for a cell, even after a clear (migration 0005).
+        version=func.nextval("score_version_seq"),
         updated_by=access.user.id,
         updated_at=now,
     )
@@ -214,7 +241,7 @@ async def put_score(
             index_elements=[m.Score.measurable_id, m.Score.week_start],
             set_={
                 "value": statement.excluded.value,
-                "version": m.Score.version + 1,
+                "version": statement.excluded.version,
                 "updated_by": statement.excluded.updated_by,
                 "updated_at": statement.excluded.updated_at,
             },
@@ -225,11 +252,18 @@ async def put_score(
 
 
 async def clear_score(
-    session: AsyncSession, access: TeamAccess, measurable_id: str, week: date, now: datetime
+    session: AsyncSession,
+    access: TeamAccess,
+    measurable_id: str,
+    week: date,
+    now: datetime,
+    expected: frozenset[int] | None = None,
 ) -> None:
     version = await bump_team(session, access.team_id)
-    await _measurable(session, access.team_id, measurable_id)
-    require_shown_week(week, now, await team_tz(session, access.team_id))
+    measurable = await _measurable(session, access.team_id, measurable_id)
+    tz = await team_tz(session, access.team_id)
+    require_shown_week(week, now, tz)
+    await _require_version(session, measurable, week, now, tz, expected)
     await session.execute(
         delete(m.Score).where(m.Score.measurable_id == measurable_id, m.Score.week_start == week)
     )

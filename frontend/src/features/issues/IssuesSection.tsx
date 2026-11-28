@@ -82,7 +82,7 @@ export async function IssuesSection({
                       issueTitle={issue.title}
                       value={issue.priority ?? null}
                       editable={editable}
-                      action={setPriority.bind(null, issue.id)}
+                      action={setPriority.bind(null, issue.id, issue.version)}
                     />
                     {editable ? (
                       <>
