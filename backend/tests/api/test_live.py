@@ -119,6 +119,27 @@ def test_stream_starts_with_retry_and_a_snapshot(app, login, seeded):
     )
 
 
+def test_a_reconnect_with_last_event_id_always_starts_from_a_fresh_snapshot(app, login, seeded):
+    """EventSource resends the last id it saw. Events missed while away are never replayed;
+    the server answers with a fresh snapshot whatever the id, so the client refreshes once
+    (API contracts 10), including for a stale, a future or a garbage id."""
+    u3 = login("u3")
+    write = u3.put(SCORE.removeprefix("/api/v1"), {"value": "11"})  # moves the version on
+    assert write.status == 200
+    version = query(
+        seeded.owner_database_url, "SELECT cache_version FROM teams WHERE id = 'team_lead'"
+    )[0][0]
+    for last_seen in (str(version - 1), str(version + 50), "not-a-number"):
+        resp = u3.get(
+            "/teams/team_lead/events", headers={"last-event-id": last_seen}, disconnect_after=0.3
+        )
+        assert resp.status == 200, last_seen
+        events = parse_sse(resp.raw)
+        assert [e[0] for e in events[:1]] == ["snapshot"], last_seen
+        assert events[0][1] == version, last_seen  # the current version, not the one sent
+        assert all(e[0] != "team.changed" for e in events), last_seen  # nothing replayed
+
+
 def test_a_committed_write_reaches_an_open_stream_in_well_under_a_second(app, seeded):
     async def scenario():
         async with Worker(seeded, app.state.clock) as worker:

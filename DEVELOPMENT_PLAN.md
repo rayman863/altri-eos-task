@@ -27,6 +27,7 @@ Built from the assessment brief, the seed README, the seed data (`seed.json`) an
 
 ### Revision log
 
+- **v46 (2026-11-29):** cohesion review of the whole codebase against this plan (13 findings, all fixed; no code bugs, nothing affected data or access). **Four promised tests were missing and are now written:** a week closing turns a cached `pending` cell `off_track` (the Scorecard key carries the week, now proven), a cache entry warmed by Leadership is still refused to a Sales Team Member without the cache being read (Scorecard, Issues, Rocks), an exhausted pool answers `503 db_busy` with `Retry-After: 1` and serves again once a connection is back, and a reconnect with any `Last-Event-ID` (stale, future, garbage) starts from a fresh snapshot with nothing replayed. **One flaky test found while running them:** the ten-logins rate-limit test failed in loaded full-suite runs because the test client opens a new Redis connection per request inside the 50 ms budget; one slow connect made the limiter fail open (by design), so a login went uncounted. Those tests now get a 1 s budget and a pinned mid-window clock; production behaviour is unchanged. **Plan and contract drift fixed:** the repo tree (3.1) matches the code (`schemas.py`, the modules added since, every Makefile target, `openapi.json`, `FUTURE_WORK.md`); `compose.dev.yml` is marked never built (`WEB_RUNNER=node CSP_MODE=off` is the closest); every activity-log piece (service, outbox, roles, connection budget, application names, `GET /activity` in the contracts) and bonus rows 4 and 5 say "not built"; the application-name table gains `eos-api:preflight` and `eos-api:ratelimit`; the cache table no longer puts Measurable definitions in team reference data; the testing plan describes the real harness (pure ASGI, per-database key namespace and generation rotation instead of Redis index 1); the CSP risk fallback names a real value (`CSP_MODE=off`, not `basic`). 488 backend tests, the API tests again with the cache off (217, 19 skip), ruff clean; no application code changed, so E2E and the rules report are unaffected.
 - **v45 (2026-11-29):** `docs/FUTURE_WORK.md` (public, linked from the README and the decision record): how the two unbuilt bonus items, the activity log and signed Next.js-to-API requests, would be built, condensed from sections 3.18 and 3.16 with estimates, tests and what each does not buy. The video script (gitignored) was cut to about 4.5 minutes and now shows two bonuses: Make it an Issue from an overdue To-Do, and the lost-update refusal.
 - **v44 (2026-11-29):** review of bonus 3 (2 findings, both fixed; nothing affected data or access). The "Open Issue" links on Rocks and To-Dos all had the same accessible name, so a screen-reader user tabbing through heard several identical links; each now names its source ("Open Issue: Refresh brand"), and the E2E test checks them by name. And three descriptions still called Rocks seed-only reference data after their cache moved to per-team-version keys (the `app/cache.py` docstring, the 3.14 cache table, the study guide); all three now say Rocks are a team read model. Checked on the page in a browser: the buttons sit under each off-track Rock and overdue To-Do with their full names. Green: 482 backend tests, the API tests again with the cache off (215, 15 skip), 10 web server tests, 10 E2E with every layer on and 9 plus 1 skipped with L1 to L5 off.
 - **v43 (2026-11-29):** **bonus 3 done: Make it an Issue from an off-track Rock or an overdue To-Do** (decision 53). `POST /teams/{team_id}/rocks/{rock_id}/issue` and `POST /todos/{todo_id}/issue` follow the Scorecard pattern exactly: team lock first, an open Issue for the source wins (`200`), then the source must qualify right now (`422 rock_not_off_track` / `todo_not_overdue`), then an insert that the partial unique indexes from migration `0003` make duplicate-free (`201`). No migration was needed: the source columns, same-team foreign keys and indexes were in the schema from Phase 2. Issue `source` is now a tagged union (`measurable_week`, `rock`, `todo`), Rocks and To-Dos carry `open_issue_id`, and the Rocks cache moved from reference data to per-team-version keys, since an Issue now changes the Rocks read model. All three Make it an Issue paths share the 30-a-minute rate-limit bucket. Web: a "Make it an Issue" button on off-track Rocks and overdue To-Dos, an "Open Issue" link once made, and the Issue list says where each Issue came from. Found while testing: two button labels had lost their title (a shell substitution ate `${...}`), so screen readers heard only "Make it an Issue:"; the new E2E test caught it. 482 backend tests (18 new, including 20 simultaneous clicks for a Rock and for a To-Do), the API tests again with the cache off (215, 15 skip), 10 web server tests, 10 E2E with every layer on and 9 plus 1 skipped with L1 to L5 off, the rules report identical; `openapi.json` and the typed client regenerated.
@@ -183,36 +184,36 @@ Reply to the Altri email with links to all of these. **Every link must open with
 
 ```
 altri-eos-task/
-  docker-compose.yml          # db, redis, migrate (one-shot), api, web, logs (Dozzle), info (one-shot banner)
-  .env.example                # ports and dev-only credentials, all with defaults
-  compose.dev.yml             # opt-in hot reload (next dev, no PM2): docker compose -f docker-compose.yml -f compose.dev.yml up
-  Makefile                    # up, down, reset, test, seed, rules-report, rules-report-at, lint (raw commands also in README)
+  docker-compose.yml          # db, redis, migrate (one-shot), api, web, logs (Dozzle), info (one-shot banner); profiles: test (pytest), tools (rules report), e2e
+  .env.example                # ports, dev-only credentials and every layer switch, all with defaults
+  Makefile                    # up, down, reset, build, logs, info, seed, test, test-backend, test-backend-uncached, test-web, rules-report, rules-report-at, openapi, audit, lint (raw commands also in README)
   README.md                   # <= 2 pages
   rules_report.json           # committed output
+  openapi.json                # committed contract; the drift test regenerates and compares it
   docs/DECISIONS.md           # 1-page decision record (2.8)
   docs/DB_SCHEMA.md           # Mermaid ER diagram + constraints, triggers, indexes
   docs/API_CONTRACTS.md       # endpoint contracts, error codes, SSE events, seed-based examples
   docs/SCALING.md             # bonus: 1,000 companies note
+  docs/FUTURE_WORK.md         # the two unbuilt bonus items and how they would be built
   seed/seed.json              # copied verbatim from the Drive folder
-  db/init/                    # creates eos_test, eos_report and eos_activity databases and all roles
+  db/init/                    # creates the eos_test and eos_report databases and all roles
   artifacts/                  # committed Playwright failure trace
   backend/
     app/
-      main.py  config.py  clock.py  db.py  cache.py  security.py  logging.py  banner.py  preflight.py
+      main.py  config.py  clock.py  clock_anchor.py  db.py  cache.py  security.py  logging.py  log_config.json
+      banner.py  preflight.py  ratelimit.py  preconditions.py  errors.py  constraints.py  openapi_export.py
       envelope.py  jsonutil.py  # error body shape; JSON encoding of rule outputs
       rules/                  # PURE functions: weeks, status, completion, rocks, order, rating, summary
-      models/  schemas/  routers/  services/  authz.py  realtime.py
-      activity/               # bonus: outbox writer helper, worker loop, internal read API
+      models/  schemas.py  routers/  services/  authz.py  realtime.py
       rules_report.py         # python -m app.rules_report
       seed.py                 # python -m app.seed [--reset]
-    alembic/versions/
-    alembic_activity/versions/  # bonus: eos_activity migrations
+    alembic/versions/         # 0001 to 0005
     tests/{rules,unit,db,api}/  helpers.py
   frontend/                   # Next.js App Router, standalone build, ecosystem.config.cjs and start.sh for pm2-runtime (layer L2), edge-headers.cjs and stream-shutdown.cjs preloads, proxy.ts (CSP nonce; Next 16 renamed middleware.ts to proxy.ts)
   e2e/                        # Playwright, two browser contexts
 ```
 
-Do not name the dev file `docker-compose.override.yml`: Compose loads that automatically, so reviewers would get dev mode. The default compose runs production builds (`next build`, then `pm2-runtime` in cluster mode, see 3.11).
+Not built (bonus, docs/FUTURE_WORK.md): `backend/app/activity/` (outbox worker and internal read API), `backend/alembic_activity/` (the `eos_activity` migrations) and the `eos_activity` database in `db/init/`. A planned `compose.dev.yml` for hot reload (`next dev`, no PM2) was never needed and isn't built; the closest is `WEB_RUNNER=node CSP_MODE=off`. Never name such a file `docker-compose.override.yml`: Compose loads that automatically, so reviewers would get dev mode. The default compose runs production builds (`next build`, then `pm2-runtime` in cluster mode, see 3.11).
 
 ### 3.2 Time and clock (highest-risk area, get this right first)
 
@@ -243,7 +244,7 @@ Full Mermaid ER diagram (renders on GitHub), focused views, every constraint, tr
 | `meeting_attendees` | `PK(meeting_id, user_id)`, `joined_at` |
 | `meeting_ratings` | `PK(meeting_id, user_id)`, `rating CHECK 1..10`, FK to attendees |
 | `meeting_summaries` | `meeting_id PK`, `summary jsonb`, `created_at` (frozen at meeting end, see 3.9) |
-| `activity_outbox` (bonus) | `id bigserial`, `created_at`, `payload jsonb`: append-only hand-off to the activity worker, filled by a row trigger on every data table (3.18). The events themselves live in the separate `eos_activity` database |
+| `activity_outbox` (bonus, not built) | `id bigserial`, `created_at`, `payload jsonb`: append-only hand-off to the activity worker, filled by a row trigger on every data table (3.18). The events themselves live in the separate `eos_activity` database |
 | `clock_anchor` | One row (`id = 1`): `app_now`, `real_now`. Shared origin of the ticking clock for every API worker (3.2, 3.13) |
 
 Only `measurable_week` sources are core. The Rock and To-Do source columns exist from the first migration so the bonus "Issue from Rock/To-Do" needs no schema rework, just endpoints and two more partial unique indexes.
@@ -351,7 +352,7 @@ One command from a clean clone builds the images, starts everything, migrates, s
 | `redis` | `redis` (pinned tag) | `127.0.0.1:6379` (`REDIS_PORT`) | Cache only, no persistence, LRU at 128 MB (3.14) | `redis-cli ping` healthcheck |
 | `migrate` | api image | none | One-shot: `alembic upgrade head`, then `python -m app.seed`, then exits `0` | `service_completed_successfully` |
 | `api` | `backend/Dockerfile` | `8000` (`API_PORT`) | FastAPI run by **Uvicorn with `API_WORKERS` processes** (default 2, 3.13). API docs at `/docs` (Swagger UI) and `/redoc`, schema at `/openapi.json` | `GET /healthz` returns OK (also checks the DB pool) |
-| `activity` (bonus) | api image | none (internal `8100` only) | Activity worker: drains the outbox into `eos_activity` and serves Admin activity reads to the API (3.18) | internal `/healthz` |
+| `activity` (bonus, **not built**, FUTURE_WORK.md) | api image | none (internal `8100` only) | Activity worker: drains the outbox into `eos_activity` and serves Admin activity reads to the API (3.18) | internal `/healthz` |
 | `web` | `frontend/Dockerfile` | `3000` (`WEB_PORT`) | Next.js standalone production build run by **`pm2-runtime` in cluster mode** (`WEB_INSTANCES` workers, default 2), proxies `/api` to `api` | `GET /healthz` (a Next route handler; not under `/api`, which is proxied to FastAPI) via `wget` |
 | `logs` | `amir20/dozzle` (pinned tag) | `127.0.0.1:8080` (`LOGS_PORT`) | Log viewer (3.10) | starts immediately |
 | `info` | api image | none | One-shot banner: waits for `api` and `web` to be healthy, prints, exits `0` | n/a |
@@ -406,7 +407,7 @@ Notes:
   - **Stopping never waits on an open tab (found while building L2):** on a stop signal Next closes its server and waits for open requests, and a proxied SSE stream never ends, so `docker compose stop web` with a meeting tab open took 11 s (PM2's `kill_timeout`, then `SIGKILL`; 25 s with the plain runner). `stream-shutdown.cjs` hangs up the live streams as soon as the signal arrives, like the API's own shutdown hook: the stop now takes 1.2 s, workers exit cleanly (code 130), and `EventSource` reconnects. It tracks the stream responses, not their sockets, so a normal request on a keep-alive connection whose stream already ended still finishes; and while it is the only handler for the signal (before Next is listening and installs its own), it exits itself with Next's codes (130, 143) instead of swallowing the stop (v32). Measured on the stack: `pm2 reload web` under steady traffic served 33 requests with 0 failures, and a worker killed with `kill -9` was back in 200 ms with no failed request.
   - Clustering is safe because `web` holds no state: sessions are the signed cookie, data comes from FastAPI, live updates come from FastAPI's SSE stream. The app uses no ISR or Next data cache, so per-worker in-memory caches cannot disagree.
   - Default 2 workers, not `max`: inside a container `max` means every host CPU thread (often 16 or more), which is far too much memory for a review laptop.
-  - Dev mode (`compose.dev.yml`) runs plain `next dev` without PM2, because cluster mode and hot reload don't mix.
+  - Dev mode would run plain `next dev` without PM2, because cluster mode and hot reload don't mix. Not built (no `compose.dev.yml`); `WEB_RUNNER=node` gives a single plain Node server.
   - Trade-off for the decision record: containers usually scale by adding replicas, so PM2 inside a container is a deliberate choice. It uses several cores in one container, restarts crashed workers without a container restart, and allows a zero-downtime `pm2 reload`.
 
 ### 3.12 Database connections: pooling, lifecycle, application names (decision 15)
@@ -433,7 +434,7 @@ The two timeouts and the application name are passed as asyncpg `server_settings
 |---|---|
 | API pools: `API_WORKERS` x (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`) = 2 x 10 | up to 20 |
 | API `LISTEN` connections, one per worker | 2 |
-| Activity worker (bonus, 3.18): 2 to the main database, 3 to `eos_activity` | 5 |
+| Activity worker (bonus, 3.18, not built): 2 to the main database, 3 to `eos_activity` | 0 (5 if built) |
 | `migrate`, `info`, seed, rules report (short-lived, `NullPool`, one connection each) | 1 to 4 |
 | Test suite (`NullPool`, against `eos_test`) | a few |
 | **Total at defaults** | **under 30** |
@@ -458,14 +459,16 @@ At startup the API logs a warning if `API_WORKERS x (pool + overflow + 1)` excee
 |---|---|
 | API request pool | `eos-api:pool:<hostname>:<pid>` |
 | API LISTEN connection | `eos-api:listen:<hostname>:<pid>` |
+| API startup preflight: connection-budget check, one short connection before the workers start | `eos-api:preflight:<hostname>:<pid>` |
 | Migrations | `eos-migrate` |
 | Seed | `eos-seed` |
 | Rules report | `eos-rules-report` |
 | Startup banner | `eos-banner` |
-| Activity worker, main database (bonus) | `eos-activity:outbox:<hostname>:<pid>` |
-| Activity worker, activity database (bonus) | `eos-activity:store:<hostname>:<pid>` |
+| Activity worker, main database (bonus, not built) | `eos-activity:outbox:<hostname>:<pid>` |
+| Activity worker, activity database (bonus, not built) | `eos-activity:store:<hostname>:<pid>` |
 | Test suite | `eos-test` |
 | API Redis pool (3.14) | `CLIENT SETNAME eos-api:cache:<hostname>:<pid>` (Redis's equivalent) |
+| API rate-limit Redis pool (3.15) | `CLIENT SETNAME eos-api:ratelimit:<hostname>:<pid>` |
 
 What this buys: `SELECT application_name, state, count(*) FROM pg_stat_activity GROUP BY 1, 2` shows exactly which worker or tool holds connections. Setting Postgres `log_line_prefix` to include `%a` makes slow-query and error lines in the `db` logs (visible in Dozzle) name their source too.
 
@@ -509,7 +512,7 @@ Redis sits between the API and Postgres as a **cache-aside read layer**: the API
 |---|---|---|---|---|
 | Access facts per user (role, team ids) | `user:{uid}:access` | 300 s | Seed bumps `g` | Read by authz on every request. The session epoch is never cached: it is read from Postgres on every request, so a logout ends a session at once (v33). Facts only, never decisions; the policy still runs in code |
 | Seeded user list (login switcher) | `ref:users` | 1 h | Seed bumps `g` | Users and teams can't be edited in the app (out of scope in the brief) |
-| Team reference data: team, members, eligible owners, Measurable definitions | `team:{tid}:ref` | 1 h | Seed bumps `g` | All seeded, read-only in the app |
+| Team reference data: team, members, eligible owners (Measurable definitions are part of the Scorecard entry, keyed by team version) | `team:{tid}:ref` | 1 h | Seed bumps `g` | All seeded, read-only in the app |
 | Scorecard grid (13 weeks with statuses) | `team:{tid}:v{ver}:scorecard:{current_week}` | 600 s | Team version (Postgres) | Key holds the current week, so `pending` correctly becomes `off_track` once a week closes |
 | Issues: unsolved (in Issue order) and solved | `team:{tid}:v{ver}:issues:{status}` | 600 s | Team version (Postgres) | |
 | To-Dos with overdue flags and last closed week's rate | `team:{tid}:v{ver}:todos:{today}` | 600 s | Team version (Postgres) | Key holds today's company date, since overdue depends on it |
@@ -606,7 +609,7 @@ Writes must also be `Content-Type: application/json` (`415` otherwise), which a 
 | `web` | `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, `Permissions-Policy: camera=(), microphone=(), geolocation=()` |
 | `api` | `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on authenticated responses |
 
-Notes: `style-src 'unsafe-inline'` is needed for the inline style attributes that Radix/shadcn components set. A nonce CSP makes every page render dynamically, which is fine for this app. `next dev` needs `'unsafe-eval'`, so the dev compose file relaxes CSP. No HSTS on plain-HTTP localhost; documented for production. If the nonce CSP fights the build, fall back to `script-src 'self' 'unsafe-inline'` and list it as a known limitation.
+Notes: `style-src 'unsafe-inline'` is needed for the inline style attributes that Radix/shadcn components set. A nonce CSP makes every page render dynamically, which is fine for this app. `next dev` needs `'unsafe-eval'`, so a dev setup would run with `CSP_MODE=off` (there is no separate dev compose file). No HSTS on plain-HTTP localhost; documented for production. If the nonce CSP fights the build, fall back to `script-src 'self' 'unsafe-inline'` and list it as a known limitation.
 
 **Rate limiting** (Redis fixed window; if Redis is down it fails open and logs a warning):
 
@@ -627,7 +630,7 @@ Over the limit gives `429` with `Retry-After`. Logins reach FastAPI from the Nex
   - `eos_app` is the API's login: only `SELECT`/`INSERT`/`UPDATE`/`DELETE` on app tables and sequence usage. No DDL, no `TRUNCATE`.
   - `eos_readonly` is the banner's login: `SELECT` only.
   - Effect: even an SQL injection bug in the API could not drop or truncate tables.
-  - Activity log (bonus, 3.18): `eos_app` has no outbox privileges at all (triggers write it as `SECURITY DEFINER`) and may only execute `log_app_event()`; `eos_activity_consumer` gets `SELECT`/`DELETE` on the outbox plus `SELECT` on reference tables; `eos_activity_writer` only `INSERT`/`SELECT` on `activity_events` in `eos_activity`, which makes the log append-only.
+  - Activity log (bonus, 3.18, not built): `eos_app` would have no outbox privileges at all (triggers write it as `SECURITY DEFINER`) and may only execute `log_app_event()`; `eos_activity_consumer` gets `SELECT`/`DELETE` on the outbox plus `SELECT` on reference tables; `eos_activity_writer` only `INSERT`/`SELECT` on `activity_events` in `eos_activity`, which makes the log append-only.
 
 **Real-time:** the SSE subscription is authorized at connect with the same team-read check as REST. Events carry ids and entity types, except `meeting.state`, which carries the meeting state object (`docs/API_CONTRACTS.md`). Every receiver is an authorized reader of that team, so an event never contains anything its receiver couldn't fetch through REST anyway. Payloads stay well under `NOTIFY`'s 8000-byte limit.
 
@@ -1069,7 +1072,7 @@ One documented command (`make test`, with the plain `docker compose run ...` equ
 | Layer | What to cover |
 |---|---|
 | **Rule tests** (pytest, no DB) | Every rule in 2.6 with at least one boundary: status for all four goal types at the exact boundary, no score in closed vs current week, completion exactly 90%, done after due week, zero due gives no rate, rock status and progress cases from section 4, issue order including no-priority-last, rating 8.25 to 8.3, week bucketing around DST, half-up rounding |
-| **API tests** (pytest + httpx, real Postgres) | Team Member reading another team's data refused (by guessed id too); Observer write refused on every mutating route (route-table test); Admin reads all teams; **concurrent Make it an Issue returns one Issue** (`asyncio.gather` of ~20 requests: one `201`, the rest `200`); Make it an Issue on an on-track cell gives `422`; validation errors (bad priority, blank solve note, non-Monday week, rating out of range, Observer as owner); one active meeting per team (`409`); only the facilitator advances and ends; frozen summary unchanged after a later edit; **cross-worker fan-out** (start two API processes, subscribe the follower on one, advance on the other, assert the event arrives: deterministic, unlike hoping Uvicorn spreads the two browsers across workers); exhausted pool returns `503 db_busy` instead of hanging |
+| **API tests** (pytest calling the ASGI app directly, real Postgres and Redis) | Team Member reading another team's data refused (by guessed id too); Observer write refused on every mutating route (route-table test); Admin reads all teams; **concurrent Make it an Issue returns one Issue** (`asyncio.gather` of ~20 requests: one `201`, the rest `200`); Make it an Issue on an on-track cell gives `422`; validation errors (bad priority, blank solve note, non-Monday week, rating out of range, Observer as owner); one active meeting per team (`409`); only the facilitator advances and ends; frozen summary unchanged after a later edit; **cross-worker fan-out** (start two API processes, subscribe the follower on one, advance on the other, assert the event arrives: deterministic, unlike hoping Uvicorn spreads the two browsers across workers); exhausted pool returns `503 db_busy` instead of hanging |
 | **Security tests** (pytest + one E2E assertion) | Write without `X-EOS-CSRF` gives `403`; write with a foreign `Origin` gives `403`; `text/plain` body gives `415`; 65 KB body gives `413`; unknown field or `team_id` in the body gives `422`; tampered or expired cookie gives `401`; rate limit gives `429` with `Retry-After`; security headers present on `web` and `api` responses; the `eos_app` role cannot `CREATE TABLE` or `TRUNCATE`; an Issue titled `<script>alert(1)</script>` renders as plain text (E2E) |
 | **Cache tests** (pytest, real Redis) | Read-your-writes: edit a score, the next Scorecard read (same worker and other worker) shows the new value and status; team isolation: cache warmed by a Leadership user, a Sales Team Member still gets `403`; Redis down: API still returns correct data and `/healthz` says `degraded`; week rollover: move the frozen clock past Sunday 23:59:59 Chicago and `pending` becomes `off_track`, not a stale cached value; ended summary served unchanged from cache. The whole API suite also runs once with `CACHE_ENABLED=false` to prove identical results |
 | **End-to-end** (Playwright, `e2e/`, built in Phase 7) | Runs against an isolated stack (`api-e2e`, `web-e2e`: `eos_test`, frozen clock, reseeded per run), with two Uvicorn workers and two PM2 workers (layers L1 and L2); it also passes with both layers switched off (`WEB_RUNNER=node API_WORKERS=1`). Two browser contexts: facilitator starts the meeting, second user joins, facilitator advances Scorecard to IDS, second browser follows within 2 s; the second browser reloads mid-meeting and lands on the current section; rating, end, both on the summary. Also: a live score edit across two browsers, Make it an Issue in the UI, an XSS payload shown as text, the Observer's read-only view. SSR check: the raw HTML the Next server sends already contains the Scorecard values (a JavaScript-disabled browser would only see the skeletons, because streamed sections are revealed by React's inline script; decision 43) |
@@ -1077,7 +1080,7 @@ One documented command (`make test`, with the plain `docker compose run ...` equ
 **Fixture and clock strategy (write this up in the README):**
 
 - `APP_NOW=2026-11-11T15:00:00Z` and `APP_CLOCK_MODE=frozen` for the whole suite. Meeting timer tests use an explicit "advance clock" hook on the clock service instead of wall time, so nothing sleeps.
-- Tests use Redis database index 1, flushed per test module, so they never touch the demo cache (index 0).
+- Tests share the demo Redis but never its entries: every key starts with `eos:<database>:<code fingerprint>:<generation>`, so `eos_test` keys can't collide with the demo's `eos` keys, and every test reseed rotates the generation, which orphans what the previous test cached (3.14).
 - `RATE_LIMIT_ENABLED=false` for the suite, except the rate-limit tests themselves.
 - Tests use a separate `eos_test` database (created by `db/init/`), so `make test` never wipes the demo data you are clicking through. Reset between test modules with `python -m app.seed --reset` against `eos_test` (truncate, then reseed). No test-only endpoints in the shipped API.
 - Playwright config: `trace: 'retain-on-failure'`. Commit one trace zip from a deliberately broken run (for example, temporarily make the follower ignore `meeting.state`) under `artifacts/` and mention it in the README.
@@ -1139,7 +1142,7 @@ Video rehearsal: log in as `u1` (Avery Admin) in one window and `u3` (Casey Cho)
 | Activity outbox grows or bloats while the activity worker is down (bonus) | API unaffected; worker catches up on restart; aggressive autovacuum on the outbox; `/healthz` backlog warning after 5 minutes (3.18) |
 | Missed real-time events when a worker's `LISTEN` connection drops | Reconnect loop, then local clients refetch their snapshot (3.12 item 3); events are hints, the DB is the truth |
 | `router.refresh()` too slow for the ~1 s sync target with several attendees | Debounce bursts; apply `meeting.state` to the timer and stepper client-side at once; Redis-cached FastAPI reads and PM2 workers keep renders cheap; measure in Phase 6. Fallback: send the changed section's data in the event and update it client-side (3.17) |
-| Nonce-based CSP breaks Next.js pages or shadcn components | Built late as layer L4, behind `CSP_MODE`; if it breaks pages, ship `CSP_MODE=basic` with the documented fallback `script-src 'self' 'unsafe-inline'` (3.15) |
+| Nonce-based CSP breaks Next.js pages or shadcn components | Built late as layer L4, behind `CSP_MODE`; if it breaks pages, ship `CSP_MODE=off` (the basic headers from `next.config.ts`, no CSP) and list it as a known limitation (3.15). Not needed: the nonce CSP shipped on, and every E2E test fails on a CSP violation |
 | Writes in one team queue on the `teams.cache_version` row, or deadlock | The bump is always the first statement of a team write (consistent lock order); transactions are short; the concurrency test fires 20 parallel writes at one team (3.14) |
 | A platform layer destabilizes a working app late on Saturday | Every layer is behind a switch (section 5); E2E reruns after each layer; the Saturday guard starts docs and video on time regardless |
 | Over budget (~20.5 h left) | Graded core first and layers last (section 5); checkpoint rule and Saturday guard in section 7; ranked bonuses; cut order in section 9 |
@@ -1164,8 +1167,8 @@ Video rehearsal: log in as `u1` (Avery Admin) in one window and `u3` (Casey Cho)
 | 1 | **Done (v40).** **Lost-update protection** on scores and Issue priority: `version` column (already in schema), `ETag` on reads, `If-Match` on `PUT`/`PATCH` gives `409` with the current value when stale. Requests without `If-Match` keep "last save wins", so the core rule still holds. UI shows "changed by someone else, reload?" | 0.75 h | Cheapest, columns already planned, and it strengthens the concurrency story graded at 20% |
 | 2 | **Done (v39).** **1,000-companies note** (`docs/SCALING.md`): `company_id` on every table, tenant-leading composite indexes, optional Postgres row-level security, stateless API workers, SSE fan-out through Redis or `NOTIFY` channels per meeting, partitioning scores by company later | 0.25 h | Docs only, high signal for a senior role |
 | 3 | **Done (v43).** **Make it an Issue from an off-track Rock or overdue To-Do**: endpoints plus two partial unique indexes on `source_rock_id` / `source_todo_id` (columns already in schema), same concurrency pattern and tests as 3.8 | 1.0 h | Reuses the core pattern, but needs UI and tests |
-| 4 | **Activity log** (3.18): every data table captured by triggers, separate `eos_activity` database, transactional outbox, background worker for writes and reads, Admin-only `/admin/activity` page with filters, full-text search and git-style diffs | 5.5 h | Altri lists an audit trail as a bonus; this is the largest bonus, so the cheaper ones go first |
-| 5 | **Signed Next.js to FastAPI messages** (3.16): HMAC request and response signing with boot-time key cache, replay protection, signed SSE events, request-body gzip, signing helper and shared test vectors | 2.0 h | Your request, but not on Altri's bonus list, so the four items they named go first. Move it up if you prefer |
+| 4 | **Not built; plan in docs/FUTURE_WORK.md.** **Activity log** (3.18): every data table captured by triggers, separate `eos_activity` database, transactional outbox, background worker for writes and reads, Admin-only `/admin/activity` page with filters, full-text search and git-style diffs | 5.5 h | Altri lists an audit trail as a bonus; this is the largest bonus, so the cheaper ones go first |
+| 5 | **Not built; plan in docs/FUTURE_WORK.md.** **Signed Next.js to FastAPI messages** (3.16): HMAC request and response signing with boot-time key cache, replay protection, signed SSE events, request-body gzip, signing helper and shared test vectors | 2.0 h | Your request, but not on Altri's bonus list, so the four items they named go first. Move it up if you prefer |
 
 Any bonus item not built gets a two-line "how I would do it" note in the decision record instead.
 

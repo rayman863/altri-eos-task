@@ -12,7 +12,7 @@ import sys
 import pytest
 from sqlalchemy import text
 
-from app.db import LeakWatch, connection_budget, make_engine
+from app.db import LeakWatch, connection_budget, make_engine, make_sessionmaker
 from app.logging import JsonFormatter, request_id_var
 from app.main import create_app
 from tests.api.conftest import asgi_request, wire_for_tests
@@ -147,6 +147,36 @@ def test_short_checkouts_are_quiet(seeded, caplog):
 
     asyncio.run(main())
     assert [r for r in caplog.records if r.name == "eos.db"] == []
+
+
+def test_an_exhausted_pool_answers_503_db_busy_instead_of_hanging(app, login, seeded, caplog):
+    """Every connection checked out and none free within the pool timeout: the request gets
+    `503 db_busy` with `Retry-After: 1` (plan 3.12 and section 6), not a hang or a 500."""
+    caplog.set_level(logging.WARNING)
+    token = login("u3").token
+    tight = seeded.model_copy(update={"db_pool_timeout_s": 0.3})
+
+    async def main():
+        engine = make_engine(
+            tight, seeded.database_url, "eos-test:busy", pool_size=1, max_overflow=0
+        )
+        app.state.engine, app.state.sessionmaker = engine, make_sessionmaker(engine)
+        try:
+            async with engine.connect() as held:  # the only connection, held by someone else
+                await held.execute(text("SELECT 1"))
+                busy = await asyncio.wait_for(
+                    asgi_request(app, "GET", "/api/v1/teams/team_lead/scorecard", cookie=token),
+                    timeout=5,
+                )
+            free = await asgi_request(app, "GET", "/api/v1/teams/team_lead/scorecard", cookie=token)
+            return busy, free
+        finally:
+            await engine.dispose()
+
+    busy, free = asyncio.run(main())
+    assert (busy.status, busy.error, busy.headers.get("retry-after")) == (503, "db_busy", "1")
+    assert free.status == 200  # the same pool serves again once a connection is back
+    assert "no database connection free" in [r.getMessage() for r in caplog.records]
 
 
 @pytest.mark.parametrize(("workers", "level"), [(2, logging.INFO), (8, logging.WARNING)])

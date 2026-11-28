@@ -28,7 +28,7 @@ Every setting has a default; copy `.env.example` to `.env` to change one. Each p
 One command, unattended: **`make test`**. Without `make` (Windows), the same steps:
 
 ```
-docker compose run --rm tests                                              # 482 rule, DB, API, cache, security tests
+docker compose run --rm tests                                              # 488 rule, DB, API, cache, security tests
 docker compose run --rm -e CACHE_ENABLED=false tests pytest tests/api      # the API tests again, cache off
 docker run --rm -v "${PWD}/frontend:/app:ro" -w /app node:24.22.3-alpine npm run --silent test:server   # 10 web server tests
 docker compose --profile e2e build e2e-seed web-e2e

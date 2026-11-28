@@ -1,6 +1,6 @@
 # API Contracts
 
-Planned REST API for the EOS / Level 10 Meeting app. **Status: sections 1 to 8 implemented (Phase 4), with tests built from these examples. The `429` rate limits came with layer L4, and `If-Match` / `409 stale_version` with the lost-update bonus. Sections 9 and 10 (meetings, live updates) are implemented too (Phase 5).** FastAPI publishes the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
+Planned REST API for the EOS / Level 10 Meeting app. **Status: sections 1 to 8 implemented (Phase 4), with tests built from these examples. The `429` rate limits came with layer L4, and `If-Match` / `409 stale_version` with the lost-update bonus. Sections 9 and 10 (meetings, live updates) are implemented too (Phase 5). Section 11a (`GET /activity`, the activity-log bonus) is designed but not built; see [FUTURE_WORK.md](FUTURE_WORK.md).** FastAPI publishes the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
 
 Examples use the seed data at the default `APP_NOW` (`2026-11-11T15:00:00Z`, Wednesday 9:00 AM Chicago). They are hand-computed and double as test expectations.
 
@@ -130,7 +130,7 @@ Access is checked before anything else, including the cache (plan 3.14). An inac
 | `PUT /meetings/{meeting_id}/rating` | Rater | 200 | 403 `not_attendee`, 409 `meeting_ended`, 422 |
 | `GET /meetings/{meeting_id}/summary` | Team read | 200 | 403, 404, 409 `meeting_not_ended` |
 | `GET /teams/{team_id}/events` | Team read | 200 SSE stream | 403, 429 (more than 5 streams per user on one API worker) |
-| `GET /activity` (bonus) | Admin | 200 | 403, 422, 503 `activity_unavailable` |
+| `GET /activity` (bonus, not built) | Admin | 200 | 403, 422, 503 `activity_unavailable` |
 | `GET /healthz` (root, not under `/api/v1`) | Public | 200 `{status, db, redis, pool, realtime, cache, worker, version}`: `pool`, `realtime` (listener state, open streams) and `cache` (hits, misses) are for the Uvicorn worker that answered, whose process id is `worker`, so repeated probes can differ; `status` is `degraded` while Redis is down | 503 if the database is unreachable |
 | `GET /api/v1/ping` | Public | 200 `{"pong": "ok"}` | Round-trip check through the web proxy (`http://localhost:3000/api/v1/ping`) |
 
@@ -503,9 +503,11 @@ The event `id` is the team's `cache_version`, which only goes up. On reconnect t
 }
 ```
 
-`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it, and, with the activity log bonus, when the oldest outbox row is more than 5 minutes old. A database failure gives HTTP 503. `realtime` is this worker's `LISTEN` connection (`ok`, or `reconnecting` while live updates are paused) and its number of open SSE streams; it never fails the healthcheck. `worker` is the process id of the Uvicorn worker that answered (layer L1): `pool` and `realtime` are that worker's, so repeated probes can differ. `redis` is `ok`, `degraded` (unreachable: reads go to Postgres and rate limits are skipped) or `off` (neither the cache nor the rate limits use Redis), and `cache` counts this worker's cache hits and misses since it started. Today (before the activity log bonus) the response has every field above except `activity_backlog`.
+`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it, and, with the activity log bonus (not built), when the oldest outbox row is more than 5 minutes old. A database failure gives HTTP 503. `realtime` is this worker's `LISTEN` connection (`ok`, or `reconnecting` while live updates are paused) and its number of open SSE streams; it never fails the healthcheck. `worker` is the process id of the Uvicorn worker that answered (layer L1): `pool` and `realtime` are that worker's, so repeated probes can differ. `redis` is `ok`, `degraded` (unreachable: reads go to Postgres and rate limits are skipped) or `off` (neither the cache nor the rate limits use Redis), and `cache` counts this worker's cache hits and misses since it started. Today (before the activity log bonus) the response has every field above except `activity_backlog`.
 
-## 11a. Activity log (bonus): `GET /activity`
+## 11a. Activity log (bonus, not built): `GET /activity`
+
+**Not built.** The route is absent from `openapi.json`; this section is the design, kept for [FUTURE_WORK.md](FUTURE_WORK.md).
 
 Admins only (plan 3.18). The main API checks access, then forwards the query to the activity worker; it never touches the activity database itself. Newest first, keyset-paginated.
 

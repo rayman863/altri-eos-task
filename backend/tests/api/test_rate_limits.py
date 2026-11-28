@@ -6,9 +6,11 @@ own, under a fresh key prefix, so they never see each other's counters.
 
 import asyncio
 import secrets
+from datetime import UTC, datetime
 
 import pytest
 
+import app.cache as cache_module
 import app.ratelimit as ratelimit
 from app.cache import Cache
 from app.main import create_app
@@ -16,6 +18,22 @@ from app.ratelimit import LIMITS, RateLimiter
 from tests.api.conftest import Client, asgi_request, wire_for_tests
 
 SCORE = "/teams/team_lead/measurables/m1/scores/2026-11-02"
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_counting(monkeypatch):
+    """These tests count requests exactly, so no request may go uncounted by accident:
+
+    - Windows are fixed minutes of the real clock. Pin the limiter's clock to the middle of
+      one, or a minute boundary falling mid-test splits the requests across two windows.
+    - The test client runs every request on a new event loop, so every Redis call opens a
+      new connection (connect, AUTH, CLIENT SETNAME) inside the 50 ms budget. Under a
+      loaded full-suite run one of them can miss it, and the limiter then fails open by
+      design, so that request isn't counted. A real worker keeps its connections; give
+      the tests a budget that a fresh connection always fits in."""
+    fixed = datetime(2026, 11, 11, 15, 0, 30, tzinfo=UTC)
+    monkeypatch.setattr(ratelimit, "wall_clock", lambda: fixed)
+    monkeypatch.setattr(cache_module, "CALL_TIMEOUT_S", 1.0)
 
 
 def limiter(seeded, url: str | None = None) -> RateLimiter:

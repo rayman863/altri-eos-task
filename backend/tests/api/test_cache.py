@@ -81,6 +81,26 @@ def test_a_second_read_is_a_hit_and_a_write_makes_it_unreachable(app, login, cap
     assert next(c for c in m1["cells"] if c["week_start"] == "2026-11-02")["value"] == "123"
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["/teams/team_lead/scorecard", "/teams/team_lead/issues", "/teams/team_lead/rocks"],
+)
+def test_a_warm_entry_is_still_refused_to_another_teams_member(app, login, caplog, path):
+    """The access policy runs before any cache lookup: a Leadership read warms the entry,
+    and a Sales Team Member is still refused without the cache being consulted."""
+    caplog.set_level(logging.INFO, logger="eos.request")
+    u3 = login("u3")
+    warm = u3.get(path)
+    assert warm.status == 200
+    assert u3.get(path).body == warm.body  # warm now
+    sales = login("u6")  # only in Sales
+    caplog.clear()
+    resp = sales.get(path)
+    assert (resp.status, resp.error) == (403, "forbidden")
+    assert outcomes(caplog) == [None]  # refused before the cache was read
+    assert "items" not in (resp.body or {}) and "measurables" not in (resp.body or {})
+
+
 ENDPOINTS = [
     "/auth/users",
     "/me",
@@ -165,6 +185,38 @@ def test_an_entry_from_future_rows_expires_when_their_moment_comes(app, login, s
     assert "i_future1" not in ids()  # a hit: still before the moment
     clock.at = later
     assert "i_future1" in ids()
+
+
+def test_a_week_closing_turns_a_cached_pending_cell_off_track(app, login, caplog):
+    """The Scorecard key carries the current week, so the cached grid from before Sunday
+    23:59:59 Chicago is never served after it: the empty current-week cell must change
+    from `pending` to `off_track` the moment that week closes (plan 3.14 and section 6)."""
+    caplog.set_level(logging.INFO, logger="eos.request")
+    clock = MovableClock(app.state.clock.now())
+    app.state.clock = clock
+    u3 = login("u3")
+
+    def cell(body: dict) -> dict:
+        m1 = next(r for r in body["measurables"] if r["id"] == "m1")
+        return next(c for c in m1["cells"] if c["week_start"] == "2026-11-09")
+
+    caplog.clear()
+    before = u3.get("/teams/team_lead/scorecard").body
+    assert u3.get("/teams/team_lead/scorecard").body == before
+    assert outcomes(caplog) == ["miss", "hit"]
+    assert (before["current_week"], cell(before)["status"]) == ("2026-11-09", "pending")
+
+    clock.at = datetime.fromisoformat("2026-11-16T05:59:59+00:00")  # Sun 23:59:59 Chicago
+    caplog.clear()
+    assert cell(u3.get("/teams/team_lead/scorecard").body)["status"] == "pending"
+    assert outcomes(caplog) == ["hit"]  # same week, same entry
+
+    clock.at = datetime.fromisoformat("2026-11-16T06:00:00+00:00")  # Mon 00:00 Chicago
+    caplog.clear()
+    after = u3.get("/teams/team_lead/scorecard").body
+    assert outcomes(caplog) == ["miss"]  # a new week is a new key, never the old entry
+    assert (after["current_week"], after["last_closed_week"]) == ("2026-11-16", "2026-11-09")
+    assert (cell(after)["value"], cell(after)["status"]) == (None, "off_track")
 
 
 def test_keys_carry_the_database_and_the_code_so_nothing_is_shared_by_mistake(seeded, tmp_path):
