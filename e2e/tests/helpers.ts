@@ -9,9 +9,21 @@ import { test as base, type BrowserContext, expect, type Page } from "@playwrigh
 export const test = base.extend<{ signIn: (firstName: string) => Promise<Page> }>({
   signIn: async ({ browser }, use) => {
     const contexts: BrowserContext[] = [];
+    // Content-Security-Policy violations on any page of any of these browsers (layer L4):
+    // a test passes only if none happened, so every flow also proves the policy blocks
+    // nothing the app itself renders.
+    const violations: string[] = [];
     await use(async (firstName: string) => {
       const context = await browser.newContext();
       contexts.push(context);
+      await context.exposeFunction("__reportCsp", (v: string) => violations.push(v));
+      await context.addInitScript(() => {
+        document.addEventListener("securitypolicyviolation", (e) =>
+          (window as unknown as { __reportCsp: (v: string) => void }).__reportCsp(
+            `${e.violatedDirective} ${e.blockedURI} on ${location.pathname}`,
+          ),
+        );
+      });
       const page = await context.newPage();
       await page.goto("/login");
       await page.getByRole("button", { name: `Sign in as ${firstName}` }).click();
@@ -19,6 +31,7 @@ export const test = base.extend<{ signIn: (firstName: string) => Promise<Page> }
       return page;
     });
     await Promise.all(contexts.map((context) => context.close()));
+    expect(violations, "Content-Security-Policy violations").toEqual([]);
   },
 });
 

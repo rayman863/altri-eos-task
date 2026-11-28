@@ -10,16 +10,18 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.cache import Cache
 from app.clock import clock_from_settings, parse_app_now
 from app.clock_anchor import anchored_clock
 from app.config import Settings, get_settings
 from app.db import application_name, make_engine, make_sessionmaker, pool_status, wait_for_db
 from app.errors import install_error_handlers
 from app.logging import RequestLogMiddleware, setup_logging
+from app.ratelimit import RateLimiter, limit_writes
 from app.realtime import CLOSE, Hub, Listener, asyncpg_dsn, on_shutdown_signal
 from app.routers import meetings as meeting_routes
 from app.routers import session as session_routes
@@ -47,6 +49,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         await listener.start()
         app.state.listener = listener
+        # This worker's Redis pool (plan 3.14). Redis is optional at run time: nothing here
+        # connects, and every failure later is a cache miss.
+        app.state.cache = Cache.from_settings(settings, application_name("eos-api:cache"))
+        app.state.rate_limiter = RateLimiter.from_settings(
+            settings, application_name("eos-api:ratelimit")
+        )
         restore_signals = on_shutdown_signal(lambda: app.state.hub.broadcast(CLOSE))
         log.info("api started", extra={"env": settings.app_env, "version": settings.version})
         try:
@@ -55,6 +63,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             restore_signals()
             app.state.hub.broadcast(CLOSE)  # open streams end; EventSource reconnects
             await listener.stop()
+            await app.state.cache.close()
+            await app.state.rate_limiter.close()
             await engine.dispose()
             log.info("api stopped")
 
@@ -77,6 +87,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # for code that builds the app without running lifespan (tests set their own).
     app.state.clock = clock_from_settings(settings)
     app.state.hub = Hub()
+    # No Redis until lifespan (tests that skip it set their own, or read uncached).
+    app.state.cache = Cache(None, "")
+    app.state.rate_limiter = RateLimiter(None, "", "")
 
     install_error_handlers(app)
     # Added first = runs inside RequestLogMiddleware, so its refusals carry the request id.
@@ -108,12 +121,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception:  # noqa: BLE001 - report, don't crash the probe
             log.warning("healthz: database unreachable", exc_info=True)
             db_status = "error"
-        status = "ok" if db_status == "ok" else "error"
+        cache = request.app.state.cache
+        # Redis as the layers that use it see it: the cache's pool, or the rate limiter's
+        # when the cache is off (`off` only when neither uses Redis).
+        pool = cache if cache.enabled else request.app.state.rate_limiter
+        redis_status = await pool.ping()
+        # Redis down: still HTTP 200, the app works without it (reads go to Postgres).
+        status = (
+            "error" if db_status != "ok" else "degraded" if redis_status == "degraded" else "ok"
+        )
         return JSONResponse(
-            status_code=200 if status == "ok" else 503,
+            status_code=503 if status == "error" else 200,
             content={
                 "status": status,
                 "db": db_status,
+                "redis": redis_status,
                 "pool": pool_status(engine),
                 # Degraded real-time doesn't fail the healthcheck (the app still works),
                 # but it shows here: "reconnecting" means live updates are paused.
@@ -121,6 +143,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "listener": listener.status if listener else "off",
                     "streams": request.app.state.hub.stream_count(),
                 },
+                "cache": cache.counters(),  # this worker's hits and misses
                 # Which Uvicorn worker answered (layer L1): pool and stream counts are per
                 # worker, so repeated probes can show different numbers.
                 "worker": os.getpid(),
@@ -128,7 +151,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
 
-    api = APIRouter(prefix=API_PREFIX)
+    # Rate limits run first on every /api/v1 route (they only count writes; plan 3.15).
+    api = APIRouter(prefix=API_PREFIX, dependencies=[Depends(limit_writes)])
 
     @api.get("/ping", tags=["Health"], summary="Round-trip check through the web proxy")
     async def ping() -> dict[str, str]:

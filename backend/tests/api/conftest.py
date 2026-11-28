@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
+from app.cache import Cache
 from app.clock import FrozenClock, parse_app_now
 from app.db import make_sessionmaker
 from app.main import create_app
@@ -173,12 +174,22 @@ class Client:
 @pytest.fixture
 def app(seeded) -> FastAPI:  # noqa: F811 - the imported fixture
     application = create_app(seeded)
-    engine = engine_for(seeded.database_url)  # eos_app, like the real API
-    application.state.engine = engine
-    application.state.sessionmaker = make_sessionmaker(engine)
-    application.state.clock = FrozenClock(parse_app_now(seeded.app_now))
+    engine = wire_for_tests(application, seeded)
     yield application
     asyncio.run(engine.dispose())
+
+
+def wire_for_tests(application: FastAPI, config: Any) -> Any:
+    """What lifespan would set up, for an app the tests drive without running it: an eos_app
+    engine (NullPool), a frozen clock at APP_NOW, and the real Redis cache when
+    CACHE_ENABLED (the suite's default), so every API test also checks that cached reads
+    match; CACHE_ENABLED=false reruns everything uncached. Returns the engine to dispose."""
+    engine = engine_for(config.database_url)  # eos_app, like the real API
+    application.state.engine = engine
+    application.state.sessionmaker = make_sessionmaker(engine)
+    application.state.clock = FrozenClock(parse_app_now(config.app_now))
+    application.state.cache = Cache.from_settings(config, "eos-test:cache")
+    return engine
 
 
 @pytest.fixture

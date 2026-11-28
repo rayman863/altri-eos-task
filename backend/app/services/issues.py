@@ -8,12 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models as m
 from app.authz import CurrentUser, ResourceAccess, TeamAccess
+from app.cache import RequestCache, Until, next_change
 from app.errors import AppError
 from app.realtime import team_changed
 from app.rules.issues import issue_order
 from app.rules.types import Issue
 from app.rules.weeks import today
-from app.services.common import bump_team, is_eligible_owner, new_id, team_tz
+from app.services.common import bump_team, is_eligible_owner, new_id, team_state, team_tz
 
 NEW_TODO_DUE_DAYS = 7  # plan 3.5: today in company time + 7 days
 
@@ -80,20 +81,39 @@ async def get_issue(session: AsyncSession, issue_id: str) -> dict[str, Any]:
 
 
 async def list_issues(
-    session: AsyncSession, team_id: str, status: str, now: datetime
+    session: AsyncSession,
+    team_id: str,
+    status: str,
+    now: datetime,
+    cache: RequestCache | None = None,
 ) -> list[dict[str, Any]]:
+    """Cached per team version and status (plan 3.14), until the next Issue timestamp after
+    now, since "unsolved as of now" changes then."""
+    if cache is None:
+        return (await _list_issues(session, team_id, status, now)).value
+    version, _ = await team_state(session, team_id)
+    return await cache.get_or_set(
+        f"team:{team_id}:v{version}:issues:{status}",
+        cache.cache.ttl_team,
+        lambda: _list_issues(session, team_id, status, now),
+        now,
+    )
+
+
+async def _list_issues(session: AsyncSession, team_id: str, status: str, now: datetime) -> Until:
     rows = {
         r.id: r for r in await session.execute(_issue_query().where(m.Issue.team_id == team_id))
     }
+    until = next_change((t for r in rows.values() for t in (r.created_at, r.solved_at)), now)
     if status == "unsolved":
         # Issue order and "unsolved as of now" come from the rules module.
         order = issue_order(
             (Issue(r.id, r.priority, r.created_at, r.solved_at) for r in rows.values()), now
         )
-        return [issue_out(rows[i]) for i in order]
+        return Until([issue_out(rows[i]) for i in order], until)
     solved = [r for r in rows.values() if r.solved_at is not None and r.solved_at <= now]
     solved.sort(key=lambda r: (r.solved_at, r.id), reverse=True)  # newest first
-    return [issue_out(r) for r in solved]
+    return Until([issue_out(r) for r in solved], until)
 
 
 async def create_issue(

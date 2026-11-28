@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 /** A score as typed: empty clears it; otherwise up to 4 decimals and |value| <= 1e9, the
  * same limits as the API (which stays the authority). Used in the cell and the action. */

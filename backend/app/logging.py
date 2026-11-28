@@ -259,6 +259,9 @@ class RequestLogMiddleware:
                 # Set by the auth dependency (app/authz.py) once the session is verified.
                 "user_id": scope.get("state", {}).get("user_id"),
             }
+            # hit, miss or bypass (app/cache.py), on requests that read through the cache.
+            if (cache := scope.get("state", {}).get("cache")) is not None:
+                entry["cache"] = cache
             if self.log_payloads:
                 entry["request_body"] = _body_for_log(
                     bytes(req_body),

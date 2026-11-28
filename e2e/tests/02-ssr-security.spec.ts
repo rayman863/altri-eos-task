@@ -41,3 +41,50 @@ test("an Observer sees the team read-only and can't open other teams", async ({ 
   await ellis.goto("/teams/team_sales");
   await expect(ellis.getByText("You don't have access to this team")).toBeVisible();
 });
+
+test("pages carry a fresh nonce CSP: everything the server rendered runs, injected handlers don't", async ({ browser }) => {
+  const context = await browser.newContext();
+  // Records every Content-Security-Policy violation, from the first byte of each page on.
+  await context.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { __csp: string[] }).__csp = seen;
+    document.addEventListener("securitypolicyviolation", (e) =>
+      seen.push(`${e.violatedDirective} ${e.blockedURI} ${e.sample}`.trim()),
+    );
+  });
+  // Closed even when a check fails: a leftover page would keep a live stream open, which
+  // counts against the user's stream limit in the tests after this one.
+  try {
+    const page = await context.newPage();
+    const first = await page.goto("/login");
+    const policy = first?.headers()["content-security-policy"];
+    test.skip(!policy, "CSP_MODE=off: layer L4's policy is switched off");
+    expect(policy).toContain("'strict-dynamic'");
+    const nonce = /'nonce-([^']+)'/.exec(policy ?? "")?.[1];
+    expect(nonce).toBeTruthy();
+    const second = await page.request.get("/login");
+    expect(second.headers()["content-security-policy"]).not.toContain(nonce);
+
+    // Sign in and use the page: hydration, a Server Action and the live stream all need
+    // scripts, so a blocked script would fail here.
+    await page.getByRole("button", { name: "Sign in as Casey" }).click();
+    await expect(page).toHaveURL(/\/teams\//);
+    await expect(page.getByText("Live", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)).toEqual([]);
+
+    // Markup that slipped into the page some other way can't run its inline handler.
+    const ran = await page.evaluate(async () => {
+      const w = window as unknown as { __xss?: number };
+      const box = document.createElement("div");
+      box.innerHTML = '<img src="data:," onerror="window.__xss = 1">';
+      document.body.appendChild(box);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return w.__xss;
+    });
+    expect(ran).toBeUndefined();
+    const after = await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp);
+    expect(after.some((v) => v.startsWith("script-src-attr"))).toBe(true);
+  } finally {
+    await context.close();
+  }
+});

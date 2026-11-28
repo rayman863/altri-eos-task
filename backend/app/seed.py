@@ -9,6 +9,8 @@ Loads seed/seed.json in one transaction as eos_owner:
 - --reset truncates every app table first (tests and the rules report's scratch database).
 - Writes the frozen summaries of the ended seeded meetings (plan 3.9). A meeting without
   `ended_at` is loaded as active, in its first section, with no summary.
+- Then replaces the database's cache generation in Redis, which orphans every cached
+  reference entry (plan 3.14). `run()` alone (tests, the rules report) never touches Redis.
 """
 
 import argparse
@@ -28,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app import models as m
+from app.cache import rotate_generation
 from app.config import get_settings
 from app.logging import setup_logging
 from app.rules.meetings import scorecard_week_for
@@ -283,6 +286,19 @@ def main() -> None:
         "seed loaded" if total else "seed already present, nothing inserted",
         extra={"reset": args.reset, "inserted": inserted},
     )
+    # After the commit: every reference entry cached for this database is orphaned (plan
+    # 3.14). With the cache on, no Redis means no start: the API must not come up on top
+    # of reference data cached before this seed. With it off, try anyway, so turning it
+    # back on later can't find entries from before.
+    try:
+        asyncio.run(rotate_generation(settings))
+    except Exception:
+        if settings.cache_enabled:
+            log.exception("could not replace the cache generation in Redis")
+            raise SystemExit(1) from None
+        log.warning("cache off and Redis unreachable: generation not replaced")
+    else:
+        log.info("cache generation replaced")
 
 
 if __name__ == "__main__":

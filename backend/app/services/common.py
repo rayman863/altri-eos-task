@@ -39,6 +39,22 @@ async def bump_team(session: AsyncSession, team_id: str) -> int:
     return int(version)
 
 
+async def team_state(session: AsyncSession, team_id: str) -> tuple[int, ZoneInfo]:
+    """The team's cache version and company time zone, in one primary-key lookup: what a
+    cached read needs before it can build its key (plan 3.14). Read before anything else
+    in the request's read, so a cached result is never older than its version."""
+    row = (
+        await session.execute(
+            select(m.Team.cache_version, m.Company.timezone)
+            .join(m.Company, m.Company.id == m.Team.company_id)
+            .where(m.Team.id == team_id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise AppError(404, "not_found", "No such team.")
+    return int(row.cache_version), ZoneInfo(row.timezone)
+
+
 async def team_tz(session: AsyncSession, team_id: str) -> ZoneInfo:
     name = await session.scalar(
         select(m.Company.timezone)

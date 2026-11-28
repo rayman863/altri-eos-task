@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 // Geist from the `geist` npm package (local font files via next/font/local), not
 // next/font/google: the image build must not depend on reaching Google Fonts.
 import { GeistMono } from "geist/font/mono";
@@ -12,7 +13,11 @@ export const metadata: Metadata = {
   description: "Scorecard, Rocks, To-Dos, Issues and the weekly Level 10 Meeting.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// Every page renders per request (never prerendered at build time): the nonce CSP (proxy.ts)
+// needs a fresh nonce on each response, and a prerendered page would carry none, so its
+// scripts would be blocked.
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  await connection();
   return (
     <html
       lang="en"

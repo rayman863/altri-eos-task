@@ -9,11 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models as m
 from app.authz import CurrentUser
+from app.cache import RequestCache
 from app.rules.weeks import current_week, last_closed_week, today
-from app.services.meetings import meeting_state
+from app.services.meetings import meeting_state, read_active_meeting
 
 
-async def seed_users(session: AsyncSession) -> list[dict[str, Any]]:
+async def seed_users(
+    session: AsyncSession, cache: RequestCache | None = None
+) -> list[dict[str, Any]]:
+    """The login switcher's list. Users and memberships are seed data with no edit
+    endpoint, so it is cached as reference data (plan 3.14)."""
+    if cache is not None:
+        return await cache.get_or_set("ref:users", cache.cache.ttl_ref, lambda: seed_users(session))
     teams: dict[str, list[dict[str, str]]] = {}
     for r in await session.execute(
         select(m.Membership.user_id, m.Team.id, m.Team.name)
@@ -75,7 +82,30 @@ async def team_list(session: AsyncSession, user: CurrentUser) -> list[dict[str, 
     return [{"id": t.id, "name": t.name, "active_meeting_id": active.get(t.id)} for t in teams]
 
 
-async def team_detail(session: AsyncSession, team_id: str, now: datetime) -> dict[str, Any]:
+async def team_detail(
+    session: AsyncSession, team_id: str, now: datetime, cache: RequestCache | None = None
+) -> dict[str, Any]:
+    """Team, members and eligible owners (reference data) plus the active meeting (cached
+    per team version), each from its own cache entry (plan 3.14)."""
+    if cache is None:
+        return await _team_detail(session, team_id, now)
+    ref = await cache.get_or_set(
+        f"team:{team_id}:ref", cache.cache.ttl_ref, lambda: _team_ref(session, team_id)
+    )
+    return {**ref, "active_meeting": await read_active_meeting(session, cache, team_id, now)}
+
+
+async def _team_detail(session: AsyncSession, team_id: str, now: datetime) -> dict[str, Any]:
+    active = await active_meeting_ids(session, [team_id])
+    return {
+        **await _team_ref(session, team_id),
+        "active_meeting": (
+            await meeting_state(session, active[team_id], now) if team_id in active else None
+        ),
+    }
+
+
+async def _team_ref(session: AsyncSession, team_id: str) -> dict[str, Any]:
     team = (await session.execute(select(m.Team.id, m.Team.name).where(m.Team.id == team_id))).one()
     members = list(
         await session.execute(
@@ -94,13 +124,9 @@ async def team_detail(session: AsyncSession, team_id: str, now: datetime) -> dic
     eligible = {u.id: u.name for u in members if u.role != "observer"} | {
         a.id: a.name for a in admins
     }
-    active = await active_meeting_ids(session, [team_id])
     return {
         "id": team.id,
         "name": team.name,
         "members": [{"id": u.id, "name": u.name, "role": u.role} for u in members],
         "eligible_owners": [{"id": i, "name": eligible[i]} for i in sorted(eligible)],
-        "active_meeting": (
-            await meeting_state(session, active[team_id], now) if team_id in active else None
-        ),
     }

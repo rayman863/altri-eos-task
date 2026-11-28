@@ -8,12 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models as m
 from app.authz import ResourceAccess
+from app.cache import RequestCache, Until, next_change
 from app.errors import AppError
 from app.realtime import team_changed
 from app.rules.todos import done_as_of, exists_as_of, is_overdue, todo_completion
 from app.rules.types import Todo
 from app.rules.weeks import last_closed_week, today
-from app.services.common import bump_team, team_tz
+from app.services.common import bump_team, team_state, team_tz
 
 
 def _todo_query() -> Any:
@@ -64,13 +65,27 @@ async def get_todo(session: AsyncSession, todo_id: str, now: datetime) -> dict[s
     return todo_out(row, now, await team_tz(session, row.team_id))
 
 
-async def list_todos(session: AsyncSession, team_id: str, now: datetime) -> dict[str, Any]:
+async def list_todos(
+    session: AsyncSession, team_id: str, now: datetime, cache: RequestCache | None = None
+) -> dict[str, Any]:
+    """Cached per team version and company date (overdue flags and last week's rate
+    depend on it), until the next To-Do timestamp after now (plan 3.14)."""
+    if cache is None:
+        return (await _list_todos(session, team_id, now)).value
+    version, tz = await team_state(session, team_id)
+    return await cache.get_or_set(
+        f"team:{team_id}:v{version}:todos:{today(now, tz)}",
+        cache.cache.ttl_team,
+        lambda: _list_todos(session, team_id, now),
+        now,
+    )
+
+
+async def _list_todos(session: AsyncSession, team_id: str, now: datetime) -> Until:
     tz = await team_tz(session, team_id)
-    rows = [
-        r
-        for r in await session.execute(_todo_query().where(m.Todo.team_id == team_id))
-        if exists_as_of(_rule(r), now)
-    ]
+    all_rows = list(await session.execute(_todo_query().where(m.Todo.team_id == team_id)))
+    until = next_change((t for r in all_rows for t in (r.created_at, r.done_at)), now)
+    rows = [r for r in all_rows if exists_as_of(_rule(r), now)]
     open_rows = sorted(
         (r for r in rows if not done_as_of(_rule(r), now)), key=lambda r: (r.due_date, r.id)
     )
@@ -81,7 +96,7 @@ async def list_todos(session: AsyncSession, team_id: str, now: datetime) -> dict
     )
     week = last_closed_week(now, tz)
     completion = todo_completion([_rule(r) for r in rows], week, now, tz)
-    return {
+    result = {
         "items": [todo_out(r, now, tz) for r in (*open_rows, *done_rows)],
         "last_closed_week_completion": (
             None
@@ -95,6 +110,7 @@ async def list_todos(session: AsyncSession, team_id: str, now: datetime) -> dict
             }
         ),
     }
+    return Until(result, until)
 
 
 async def set_done(

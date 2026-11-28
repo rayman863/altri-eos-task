@@ -2,13 +2,16 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 import { apiClient, SESSION_COOKIE } from "@/lib/api/server";
 
 const LoginSchema = z.object({ user_id: z.string().regex(/^[a-z0-9_]{1,64}$/) });
 
 const SESSION_MAX_AGE_S = 12 * 3600;
+
+// Login page messages by API status (the page lists them); anything else is "unavailable".
+const LOGIN_ERRORS: Record<number, string> = { 401: "unknown_user", 429: "rate_limited" };
 
 function sessionToken(response: Response): string | null {
   for (const cookie of response.headers.getSetCookie()) {
@@ -30,7 +33,7 @@ export async function login(formData: FormData): Promise<void> {
   const api = await apiClient();
   const { response, error } = await api.POST("/api/v1/auth/login", { body: parsed.data });
   const token = error === undefined ? sessionToken(response) : null;
-  if (!token) redirect(`/login?error=${response.status === 401 ? "unknown_user" : "unavailable"}`);
+  if (!token) redirect(`/login?error=${LOGIN_ERRORS[response.status] ?? "unavailable"}`);
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,

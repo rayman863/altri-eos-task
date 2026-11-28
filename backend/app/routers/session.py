@@ -5,6 +5,7 @@ from sqlalchemy import update
 
 from app import models as m
 from app.authz import Now, SignedIn, load_user
+from app.cache import ReadCache
 from app.db import DbSession
 from app.errors import AppError
 from app.realtime import close_user_streams
@@ -16,8 +17,8 @@ router = APIRouter(tags=["Session"])
 
 
 @router.get("/auth/users", response_model=list[SeedUser], summary="Seeded users (switcher)")
-async def users(session: DbSession) -> list[dict]:
-    return await svc.seed_users(session)
+async def users(session: DbSession, cache: ReadCache) -> list[dict]:
+    return await svc.seed_users(session, cache)
 
 
 @router.post("/auth/login", response_model=Me, summary="Sign in as a seeded user")

@@ -16,10 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models as m
 from app.authz import ResourceAccess, TeamAccess
+from app.cache import SUMMARY_TTL_S, RequestCache
 from app.errors import AppError
 from app.realtime import Event, emit
 from app.rules.meetings import meeting_rating, scorecard_week_for
-from app.services.common import bump_team, new_id, team_tz
+from app.services.common import bump_team, new_id, team_state, team_tz
 from app.services.summaries import meeting_snapshot
 
 SECTIONS = ("scorecard", "ids", "conclude")
@@ -36,6 +37,45 @@ async def meeting_state(session: AsyncSession, meeting_id: str, now: datetime) -
     """The meeting state object (API contracts section 9): returned by every meeting
     endpoint and pushed as the `meeting.state` event. `server_now` lets clients run the
     section timer from the server's clock; nothing advances on its own."""
+    return with_now(await _meeting_core(session, meeting_id), now)
+
+
+def with_now(state: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """A state with this response's `server_now`: the one part never cached (plan 3.14)."""
+    return {**state, "server_now": now}
+
+
+async def read_meeting_state(
+    session: AsyncSession, cache: RequestCache, team_id: str, meeting_id: str, now: datetime
+) -> dict[str, Any]:
+    """`meeting_state` for reads, cached per team version: every meeting command bumps it."""
+    version, _ = await team_state(session, team_id)
+    state = await cache.get_or_set(
+        f"team:{team_id}:v{version}:meeting:{meeting_id}",
+        cache.cache.ttl_team,
+        lambda: _meeting_core(session, meeting_id),
+    )
+    return with_now(state, now)
+
+
+async def read_active_meeting(
+    session: AsyncSession, cache: RequestCache, team_id: str, now: datetime
+) -> dict[str, Any] | None:
+    """The team's active meeting state (or None) for reads, cached per team version."""
+    version, _ = await team_state(session, team_id)
+
+    async def compute() -> dict[str, Any] | None:
+        active = await active_meeting_id(session, team_id)
+        return await _meeting_core(session, active) if active else None
+
+    state = await cache.get_or_set(
+        f"team:{team_id}:v{version}:meeting:active", cache.cache.ttl_team, compute
+    )
+    return with_now(state, now) if state is not None else None
+
+
+async def _meeting_core(session: AsyncSession, meeting_id: str) -> dict[str, Any]:
+    """Everything in the state except `server_now` (it keeps its place, set to None)."""
     mt = (
         await session.execute(
             select(
@@ -78,7 +118,7 @@ async def meeting_state(session: AsyncSession, meeting_id: str, now: datetime) -
         "section": mt.section,
         "section_started_at": mt.section_started_at,
         "section_duration_s": SECTION_DURATION_S[mt.section],
-        "server_now": now,
+        "server_now": None,
         "started_at": mt.started_at,
         "ended_at": mt.ended_at,
         "scorecard_week": mt.scorecard_week,
@@ -92,12 +132,18 @@ async def meeting_state(session: AsyncSession, meeting_id: str, now: datetime) -
     }
 
 
-async def snapshot_event(session: AsyncSession, team_id: str, now: datetime) -> Event:
+async def snapshot_event(
+    session: AsyncSession, team_id: str, now: datetime, cache: RequestCache | None = None
+) -> Event:
     """What a live stream sends first, and again after a resync: the team's cache version
-    (also the event id) and its active meeting, if any."""
+    (also the event id) and its active meeting, if any. With a cache, the meeting state is
+    shared with every other reader (a restart reconnects every open tab at once)."""
     version = await session.scalar(select(m.Team.cache_version).where(m.Team.id == team_id))
-    active = await active_meeting_id(session, team_id)
-    state = await meeting_state(session, active, now) if active else None
+    if cache is not None:
+        state = await read_active_meeting(session, cache, team_id, now)
+    else:
+        active = await active_meeting_id(session, team_id)
+        state = await meeting_state(session, active, now) if active else None
     return Event(
         "snapshot",
         int(version or 0),
@@ -271,8 +317,15 @@ async def rate(
     return {"user_id": access.user.id, "rating": rating}
 
 
-async def summary(session: AsyncSession, meeting_id: str) -> dict[str, Any]:
-    """The frozen snapshot, never recomputed (plan 3.9)."""
+async def summary(
+    session: AsyncSession, meeting_id: str, cache: RequestCache | None = None
+) -> dict[str, Any]:
+    """The frozen snapshot, never recomputed (plan 3.9). Immutable once written, so with a
+    cache it is kept for 24 h (only a new seed generation replaces it)."""
+    if cache is not None:
+        return await cache.get_or_set(
+            f"summary:{meeting_id}", SUMMARY_TTL_S, lambda: summary(session, meeting_id)
+        )
     ended_at = await session.scalar(select(m.Meeting.ended_at).where(m.Meeting.id == meeting_id))
     if ended_at is None:
         raise AppError(409, "meeting_not_ended", "The meeting hasn't ended yet.")

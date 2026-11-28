@@ -34,10 +34,12 @@ ENV NODE_ENV=production \
 COPY --from=pm2 /opt/pm2/node_modules /opt/pm2/node_modules
 ARG API_INTERNAL_URL=http://api:8000
 ENV API_INTERNAL_URL=$API_INTERNAL_URL
-COPY --from=build --chown=node:node /app/.next/standalone ./
-COPY --from=build --chown=node:node /app/.next/static ./.next/static
-COPY --from=build --chown=node:node /app/public ./public
-COPY --from=build --chown=node:node /app/edge-headers.cjs /app/stream-shutdown.cjs /app/ecosystem.config.cjs /app/start.sh ./
+# Owned by root, run as `node`: the server can read its files but never change them, even
+# with READ_ONLY_FS=false (layer L4). It needs nothing writable outside /tmp.
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
+COPY --from=build /app/public ./public
+COPY --from=build /app/edge-headers.cjs /app/stream-shutdown.cjs /app/ecosystem.config.cjs /app/start.sh ./
 USER node
 EXPOSE 3000
 # WEB_RUNNER=pm2 (PM2 cluster, WEB_INSTANCES workers) or node (one process): see start.sh.

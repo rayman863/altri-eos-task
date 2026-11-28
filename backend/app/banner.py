@@ -67,6 +67,7 @@ def web_processes(s: Settings) -> str:
 
 def render(s: Settings, users: list[tuple[str, str, str, str, str]] | None) -> str:
     host = s.public_host
+    cache = "cache on" if s.cache_enabled else "cache off"
     rule = "=" * WIDTH
     thin = "-" * WIDTH
     lines = [
@@ -78,6 +79,7 @@ def render(s: Settings, users: list[tuple[str, str, str, str, str]] | None) -> s
         f" API docs        http://{host}:{s.api_port}/docs    ReDoc: /redoc",
         f" Logs (Dozzle)   http://{host}:{s.logs_port}",
         f" Postgres        postgresql://eos_owner:<EOS_OWNER_PASSWORD>@{host}:{s.db_port}/eos",
+        f" Redis           redis://:<REDIS_PASSWORD>@{host}:{s.redis_port}    {cache}",
         thin,
         " Sign in: open the app and pick a user (no passwords).",
     ]

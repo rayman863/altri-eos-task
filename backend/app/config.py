@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     db_statement_timeout_ms: int = 5000
     db_idle_in_tx_timeout_ms: int = 10000
 
+    # Redis cache-aside read layer (layer L3, plan 3.14). Off: every read goes to Postgres.
+    redis_url: str = "redis://:redis_dev_pw@redis:6379/0"
+    cache_enabled: bool = True
+    cache_ttl_team: int = 600  # team read models (keyed by the team's cache_version)
+    cache_ttl_ref: int = 3600  # reference data (replaced on every seed)
+    # Redis rate limits on writes (layer L4, plan 3.15; app/ratelimit.py). Off: no limits.
+    rate_limit_enabled: bool = True
+
     # Seed file (compose mounts ./seed at /seed)
     seed_path: str = "/seed/seed.json"
 
@@ -63,6 +71,7 @@ class Settings(BaseSettings):
     api_port: int = 8000
     db_port: int = 5433
     logs_port: int = 8080
+    redis_port: int = 6379
     # Process counts (layers L1 and L2, plan 3.11 and 3.13). The Dockerfiles read the same
     # variables; these copies only label the banner. The web ones are plain strings on
     # purpose: the web container checks them (start.sh), and a value only the web server

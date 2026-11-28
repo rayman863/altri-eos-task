@@ -12,6 +12,7 @@ export const metadata = { title: "Sign in · EOS Level 10" };
 const ERRORS: Record<string, string> = {
   unknown_user: "That user doesn't exist. Pick one of the seeded users below.",
   unavailable: "The server didn't answer. Try again in a moment.",
+  rate_limited: "Too many sign-ins from this address in the last minute. Wait a moment and try again.",
 };
 
 const ROLE_ORDER = ["admin", "team_member", "observer"] as const;

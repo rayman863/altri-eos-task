@@ -23,6 +23,7 @@ from fastapi import Depends, Path, Request
 from sqlalchemy import select
 
 from app import models as m
+from app.cache import ACCESS_TTL_S, RequestCache, for_request
 from app.db import DbSession
 from app.errors import AppError
 from app.security import COOKIE_NAME, verify_session
@@ -70,7 +71,39 @@ class ResourceAccess(TeamAccess):
     resource_id: str
 
 
-async def load_user(session: DbSession, user_id: str) -> CurrentUser | None:
+async def load_user(
+    session: DbSession, user_id: str, cache: RequestCache | None = None
+) -> CurrentUser | None:
+    """The user and their access facts. With a cache, the facts (role, team ids) come from
+    it: they are seed data with no edit endpoint (plan 3.14). The session epoch never
+    does: it changes on logout, and a logged-out token must stop working at once, so it
+    is read from Postgres on every request."""
+    if cache is None:
+        return await _load_user(session, user_id)
+    epoch = await session.scalar(select(m.User.session_epoch).where(m.User.id == user_id))
+    if epoch is None:
+        return None
+
+    async def facts() -> dict | None:
+        user = await _load_user(session, user_id)
+        if user is None:  # removed since the epoch lookup (a seed reset): signed out
+            return None
+        return {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+            "team_ids": sorted(user.team_ids),
+        }
+
+    # note=False: every request reads these, so they stay out of its log line's outcome.
+    f = await cache.get_or_set(f"user:{user_id}:access", ACCESS_TTL_S, facts, note=False)
+    if f is None:
+        return None
+    return CurrentUser(f["id"], f["name"], f["email"], f["role"], frozenset(f["team_ids"]), epoch)
+
+
+async def _load_user(session: DbSession, user_id: str) -> CurrentUser | None:
     row = (
         await session.execute(
             select(m.User.id, m.User.name, m.User.email, m.User.role, m.User.session_epoch).where(
@@ -94,7 +127,7 @@ async def get_current_user(request: Request, session: DbSession) -> CurrentUser:
         if token
         else None
     )
-    user = await load_user(session, claims[0]) if claims else None
+    user = await load_user(session, claims[0], for_request(request)) if claims else None
     # A token from before the user's last logout carries an older epoch.
     if user is None or claims is None or claims[1] != user.session_epoch:
         raise AppError(401, "unauthenticated", "Sign in first.")

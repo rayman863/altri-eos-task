@@ -1,6 +1,6 @@
 # API Contracts
 
-Planned REST API for the EOS / Level 10 Meeting app. **Status: sections 1 to 8 implemented (Phase 4), with tests built from these examples, except the `429` rate limits (layer L4, they need Redis) and `If-Match` / `409 stale_version` (lost-update bonus). Sections 9 and 10 (meetings, live updates) are implemented too (Phase 5).** FastAPI publishes the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
+Planned REST API for the EOS / Level 10 Meeting app. **Status: sections 1 to 8 implemented (Phase 4), with tests built from these examples, except `If-Match` / `409 stale_version` (lost-update bonus). The `429` rate limits came with layer L4. Sections 9 and 10 (meetings, live updates) are implemented too (Phase 5).** FastAPI publishes the same contracts as OpenAPI at `/docs`; this file is the agreed design, and the committed `openapi.json` must match it (drift check, plan section 3.17).
 
 Examples use the seed data at the default `APP_NOW` (`2026-11-11T15:00:00Z`, Wednesday 9:00 AM Chicago). They are hand-computed and double as test expectations.
 
@@ -62,7 +62,7 @@ Every error, whatever the status, has the same shape:
 | 422 | `cell_not_off_track` | Make it an Issue on a cell that isn't off track (and has no open Issue) |
 | 422 | `owner_not_eligible` | Owner is an Observer, or not an Admin or member of the team |
 | 422 | `week_out_of_range` | Week isn't a Monday inside the 13 shown weeks |
-| 429 | `rate_limited` | Over a rate limit; `Retry-After` header set |
+| 429 | `rate_limited` | Over a rate limit; `Retry-After` header set (seconds). Limits (layer L4, one-minute windows in Redis): 10 logins per client address, 30 Make it an Issue and 120 other writes per user; reads are never limited. Open live streams: 5 per user on each API worker. Logout is never limited. Redis down: no limits rather than errors |
 | 500 | `internal_error` | Unexpected error; details only in the logs, found by `request_id` |
 | 503 | `db_busy` | No database connection free within 5 s |
 | 503 | `activity_unavailable` | Only with the activity log bonus: the activity worker is down; the rest of the API keeps working |
@@ -127,7 +127,7 @@ Access is checked before anything else, including the cache (plan 3.14). An inac
 | `GET /meetings/{meeting_id}/summary` | Team read | 200 | 403, 404, 409 `meeting_not_ended` |
 | `GET /teams/{team_id}/events` | Team read | 200 SSE stream | 403, 429 (more than 5 streams per user on one API worker) |
 | `GET /activity` (bonus) | Admin | 200 | 403, 422, 503 `activity_unavailable` |
-| `GET /healthz` (root, not under `/api/v1`) | Public | 200 `{status, db, pool, realtime, worker, version}`: `pool` and `realtime` (listener state, open streams) are for the Uvicorn worker that answered, whose process id is `worker`, so repeated probes can differ | 503 if the database is unreachable |
+| `GET /healthz` (root, not under `/api/v1`) | Public | 200 `{status, db, redis, pool, realtime, cache, worker, version}`: `pool`, `realtime` (listener state, open streams) and `cache` (hits, misses) are for the Uvicorn worker that answered, whose process id is `worker`, so repeated probes can differ; `status` is `degraded` while Redis is down | 503 if the database is unreachable |
 | `GET /api/v1/ping` | Public | 200 `{"pong": "ok"}` | Round-trip check through the web proxy (`http://localhost:3000/api/v1/ping`) |
 
 ## 3. Session
@@ -489,7 +489,7 @@ The event `id` is the team's `cache_version`, which only goes up. On reconnect t
 }
 ```
 
-`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it, and, with the activity log bonus, when the oldest outbox row is more than 5 minutes old. A database failure gives HTTP 503. `realtime` is this worker's `LISTEN` connection (`ok`, or `reconnecting` while live updates are paused) and its number of open SSE streams; it never fails the healthcheck. `worker` is the process id of the Uvicorn worker that answered (layer L1): `pool` and `realtime` are that worker's, so repeated probes can differ. Today (before layers L3 to L5 and the bonus) the response has `status`, `db`, `pool`, `realtime`, `worker` and `version`.
+`status` is `degraded` (still HTTP 200) when Redis is down, because the app works without it, and, with the activity log bonus, when the oldest outbox row is more than 5 minutes old. A database failure gives HTTP 503. `realtime` is this worker's `LISTEN` connection (`ok`, or `reconnecting` while live updates are paused) and its number of open SSE streams; it never fails the healthcheck. `worker` is the process id of the Uvicorn worker that answered (layer L1): `pool` and `realtime` are that worker's, so repeated probes can differ. `redis` is `ok`, `degraded` (unreachable: reads go to Postgres and rate limits are skipped) or `off` (neither the cache nor the rate limits use Redis), and `cache` counts this worker's cache hits and misses since it started. Today (before the activity log bonus) the response has every field above except `activity_backlog`.
 
 ## 11a. Activity log (bonus): `GET /activity`
 

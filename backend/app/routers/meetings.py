@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from app.authz import MeetingFacilitator, MeetingRater, MeetingRead, Now, TeamRead, TeamWrite
+from app.cache import ReadCache, RequestCache
 from app.db import DbSession
 from app.errors import AppError
 from app.realtime import Hub, stream
@@ -28,10 +29,8 @@ SSE_HEADERS = {
 
 
 @router.get("/teams/{team_id}/meetings/active", response_model=ActiveMeeting)
-async def active_meeting(access: TeamRead, session: DbSession, now: Now) -> dict:
-    meeting_id = await meetings.active_meeting_id(session, access.team_id)
-    state = await meetings.meeting_state(session, meeting_id, now) if meeting_id else None
-    return {"meeting": state}
+async def active_meeting(access: TeamRead, session: DbSession, now: Now, cache: ReadCache) -> dict:
+    return {"meeting": await meetings.read_active_meeting(session, cache, access.team_id, now)}
 
 
 @router.post("/teams/{team_id}/meetings", response_model=MeetingState, status_code=201)
@@ -42,8 +41,10 @@ async def start_meeting(
 
 
 @router.get("/meetings/{meeting_id}", response_model=MeetingState)
-async def get_meeting(access: MeetingRead, session: DbSession, now: Now) -> dict:
-    return await meetings.meeting_state(session, access.resource_id, now)
+async def get_meeting(access: MeetingRead, session: DbSession, now: Now, cache: ReadCache) -> dict:
+    return await meetings.read_meeting_state(
+        session, cache, access.team_id, access.resource_id, now
+    )
 
 
 @router.post("/meetings/{meeting_id}/join", response_model=MeetingState)
@@ -73,8 +74,8 @@ async def rate_meeting(access: MeetingRater, body: RatingIn, session: DbSession,
 
 
 @router.get("/meetings/{meeting_id}/summary", response_model=MeetingSummary)
-async def meeting_summary(access: MeetingRead, session: DbSession) -> dict:
-    return await meetings.summary(session, access.resource_id)
+async def meeting_summary(access: MeetingRead, session: DbSession, cache: ReadCache) -> dict:
+    return await meetings.summary(session, access.resource_id, cache)
 
 
 @router.get(
@@ -98,11 +99,13 @@ async def events(access: TeamRead, request: Request) -> StreamingResponse:
         )
     sessionmaker = request.app.state.sessionmaker
     clock = request.app.state.clock
+    read_cache = request.app.state.cache
     team_id = access.team_id
 
     async def snapshot():  # noqa: ANN202 - an Event
+        cache = RequestCache(read_cache, {})  # the meeting state entry every reader shares
         async with sessionmaker() as session:
-            return await meetings.snapshot_event(session, team_id, clock.now())
+            return await meetings.snapshot_event(session, team_id, clock.now(), cache)
 
     return StreamingResponse(
         stream(hub, team_id, access.user.id, snapshot),

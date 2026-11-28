@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Path, Query, Response
 
 from app.authz import IssueWrite, MeasurableIdPath, Now, SignedIn, TeamRead, TeamWrite, TodoWrite
+from app.cache import ReadCache
 from app.db import DbSession
 from app.schemas import (
     Cell,
@@ -42,16 +43,16 @@ async def list_teams(user: SignedIn, session: DbSession) -> list[dict]:
 
 
 @router.get("/teams/{team_id}", response_model=TeamDetail, tags=["Teams"])
-async def get_team(access: TeamRead, session: DbSession, now: Now) -> dict:
-    return await teams.team_detail(session, access.team_id, now)
+async def get_team(access: TeamRead, session: DbSession, now: Now, cache: ReadCache) -> dict:
+    return await teams.team_detail(session, access.team_id, now, cache)
 
 
 # ---- scorecard ------------------------------------------------------------------------------
 
 
 @router.get("/teams/{team_id}/scorecard", response_model=Scorecard, tags=["Scorecard"])
-async def get_scorecard(access: TeamRead, session: DbSession, now: Now) -> dict:
-    return await scorecard.scorecard(session, access.team_id, now)
+async def get_scorecard(access: TeamRead, session: DbSession, now: Now, cache: ReadCache) -> dict:
+    return await scorecard.scorecard(session, access.team_id, now, cache)
 
 
 @router.put(SCORE_PATH, response_model=Cell, tags=["Scorecard"], summary="Set a score")
@@ -114,9 +115,10 @@ async def list_issues(
     access: TeamRead,
     session: DbSession,
     now: Now,
+    cache: ReadCache,
     status: Annotated[Literal["unsolved", "solved"], Query()] = "unsolved",
 ) -> list[dict]:
-    return await issues.list_issues(session, access.team_id, status, now)
+    return await issues.list_issues(session, access.team_id, status, now, cache)
 
 
 @router.post("/teams/{team_id}/issues", response_model=IssueOut, status_code=201, tags=["Issues"])
@@ -148,8 +150,8 @@ async def add_issue_todo(
 
 
 @router.get("/teams/{team_id}/todos", response_model=TodoList, tags=["To-Dos"])
-async def list_todos(access: TeamRead, session: DbSession, now: Now) -> dict:
-    return await todos.list_todos(session, access.team_id, now)
+async def list_todos(access: TeamRead, session: DbSession, now: Now, cache: ReadCache) -> dict:
+    return await todos.list_todos(session, access.team_id, now, cache)
 
 
 @router.put("/todos/{todo_id}/done", response_model=TodoOut, tags=["To-Dos"])
@@ -161,5 +163,5 @@ async def set_todo_done(access: TodoWrite, body: TodoDoneIn, session: DbSession,
 
 
 @router.get("/teams/{team_id}/rocks", response_model=RockList, tags=["Rocks"])
-async def list_rocks(access: TeamRead, session: DbSession, now: Now) -> dict:
-    return await rocks.list_rocks(session, access.team_id, now)
+async def list_rocks(access: TeamRead, session: DbSession, now: Now, cache: ReadCache) -> dict:
+    return await rocks.list_rocks(session, access.team_id, now, cache)

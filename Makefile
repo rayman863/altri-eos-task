@@ -1,6 +1,6 @@
 # Convenience targets. Every target is a plain docker compose command, listed in the
 # README too, so nothing here is required (Windows has no make by default).
-.PHONY: up down reset build logs info lint test test-backend test-web test-e2e seed rules-report rules-report-at openapi
+.PHONY: up down reset build logs info lint audit test test-backend test-backend-uncached test-web test-e2e seed rules-report rules-report-at openapi
 
 # Not `up --wait`: it fails whenever the one-shot `info` container has already exited.
 # `info` only starts once api and web are healthy, so waiting for it is the readiness check.
@@ -21,13 +21,26 @@ build:         ## rebuild images
 logs:          ## follow all logs (Dozzle at http://localhost:8080 is nicer)
 	docker compose logs -f
 
-test:          ## everything, unattended: backend suite, web server tests, then the browser E2E on its own stack
+# Layer L4: known vulnerabilities in what ships (no dev dependencies). pip-audit checks the
+# API's locked runtime packages; npm audit the web app's and PM2's lockfiles.
+audit:         ## dependency audit of the runtime packages (API, web, PM2)
+	docker compose run --rm --no-deps tests sh -c "uv export --frozen --no-dev --no-hashes --no-emit-project --format requirements-txt -o /tmp/req.txt >/dev/null && uvx --quiet pip-audit==2.9.0 -r /tmp/req.txt --progress-spinner off"
+	docker run --rm -v "$(CURDIR)/frontend:/src:ro" -w /src node:24.22.3-alpine npm audit --omit=dev
+	docker run --rm -v "$(CURDIR)/frontend/pm2:/src:ro" -w /src node:24.22.3-alpine npm audit --omit=dev
+
+test:          ## everything, unattended: backend suite (cache on, then the API tests with it off), web server tests, then the browser E2E
 	$(MAKE) test-backend
+	$(MAKE) test-backend-uncached
 	$(MAKE) test-web
 	$(MAKE) test-e2e
 
 test-backend:  ## rules, database and API tests against eos_test (APP_NOW frozen at the seed's now)
 	docker compose run --rm tests
+
+# Layer L3: the API tests again with the Redis cache switched off, so both paths give the same
+# results (tests/api/test_cache.py compares the bytes; its own tests skip here).
+test-backend-uncached:  ## API tests with CACHE_ENABLED=false
+	docker compose run --rm -e CACHE_ENABLED=false tests pytest tests/api
 
 # Node built-ins only, so no npm install: the preloads (edge headers, stream hang-up on stop)
 # and the PM2 cluster config.

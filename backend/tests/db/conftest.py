@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app import seed
+from app.cache import rotate_generation
 from app.config import Settings, get_settings
 
 BACKEND = Path(__file__).resolve().parents[2]
@@ -35,13 +36,16 @@ def migrated(settings: Settings) -> Settings:
 
 
 def reseed(settings: Settings, *, reset: bool, seed_path: Path | None = None) -> dict[str, int]:
-    return asyncio.run(
+    inserted = asyncio.run(
         seed.run(
             reset=reset,
             seed_path=seed_path or Path(settings.seed_path),
             database_url=settings.owner_database_url,
         )
     )
+    if settings.cache_enabled:  # like `python -m app.seed`: nothing cached survives a seed
+        asyncio.run(rotate_generation(settings))
+    return inserted
 
 
 def engine_for(url: str) -> AsyncEngine:

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models as m
 from app.authz import TeamAccess
+from app.cache import RequestCache
 from app.errors import AppError
 from app.jsonutil import decimal_str
 from app.realtime import team_changed
@@ -20,6 +21,7 @@ from app.services.common import (
     bump_team,
     new_id,
     require_shown_week,
+    team_state,
     team_tz,
     user_refs,
     week_label,
@@ -71,7 +73,21 @@ def cell_out(
     }
 
 
-async def scorecard(session: AsyncSession, team_id: str, now: datetime) -> dict[str, Any]:
+async def scorecard(
+    session: AsyncSession, team_id: str, now: datetime, cache: RequestCache | None = None
+) -> dict[str, Any]:
+    """The grid, cached per team version and current week: a week closing turns `pending`
+    into `off_track`, so the week is part of the key (plan 3.14)."""
+    if cache is None:
+        return await _scorecard(session, team_id, now)
+    version, tz = await team_state(session, team_id)
+    key = f"team:{team_id}:v{version}:scorecard:{current_week(now, tz)}"
+    return await cache.get_or_set(
+        key, cache.cache.ttl_team, lambda: _scorecard(session, team_id, now)
+    )
+
+
+async def _scorecard(session: AsyncSession, team_id: str, now: datetime) -> dict[str, Any]:
     tz = await team_tz(session, team_id)
     weeks = week_window(now, tz)
     this_week = current_week(now, tz)

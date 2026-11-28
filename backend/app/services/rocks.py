@@ -7,13 +7,30 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models as m
+from app.cache import RequestCache
 from app.rules.rocks import milestone_past_due, rock_progress, rock_status
 from app.rules.types import Milestone
 from app.rules.weeks import quarter_of, today
-from app.services.common import team_tz, user_refs
+from app.services.common import team_state, team_tz, user_refs
 
 
-async def list_rocks(session: AsyncSession, team_id: str, now: datetime) -> dict[str, Any]:
+async def list_rocks(
+    session: AsyncSession, team_id: str, now: datetime, cache: RequestCache | None = None
+) -> dict[str, Any]:
+    """Rocks and milestones are seed data with no edit endpoint, so they are cached as
+    reference data (replaced by every seed) per company date: status and past-due flags
+    only change with the date (plan 3.14)."""
+    if cache is None:
+        return await _list_rocks(session, team_id, now)
+    _, tz = await team_state(session, team_id)
+    return await cache.get_or_set(
+        f"team:{team_id}:rocks:{today(now, tz)}",
+        cache.cache.ttl_ref,
+        lambda: _list_rocks(session, team_id, now),
+    )
+
+
+async def _list_rocks(session: AsyncSession, team_id: str, now: datetime) -> dict[str, Any]:
     tz = await team_tz(session, team_id)
     day = today(now, tz)
     quarter = quarter_of(day)

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 /** Form schemas, used in the client form (instant feedback) and again in the Server Action
  * before FastAPI, which stays the authority (plan 3.17). Limits mirror the API. */

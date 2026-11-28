@@ -7,6 +7,16 @@
 # `exec` so the runner is PID 1 and gets the container's SIGTERM directly.
 set -eu
 
+# Read per request by proxy.ts, where anything but "off" means on: check it here, so a typo
+# such as "Off" stops the start instead of being silently ignored.
+case "${CSP_MODE:-nonce}" in
+  nonce | off) ;;
+  *)
+    echo "CSP_MODE must be nonce or off, got: ${CSP_MODE}" >&2
+    exit 64
+    ;;
+esac
+
 case "${WEB_RUNNER:-pm2}" in
   pm2)
     # Checked here too: PM2 reports a config error but still exits 0.

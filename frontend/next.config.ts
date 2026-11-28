@@ -21,8 +21,8 @@ const nextConfig: NextConfig = {
       },
     },
   },
-  // Basic security headers for every page (plan 3.15). The nonce-based CSP arrives with
-  // layer L4, because a nonce CSP needs proxy.ts to mint a nonce per request.
+  // Basic security headers for every page (plan 3.15). The nonce Content-Security-Policy
+  // (layer L4) is set per request in proxy.ts, since each response needs its own nonce.
   async headers() {
     return [
       {
