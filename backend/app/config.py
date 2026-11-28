@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     log_level: LogLevel = "info"
     log_payloads: bool = True
     log_body_limit: int = 8192
+    # Observability extras (layer L5, plan 3.10, 3.12, 3.16): `worker` (the process id) on
+    # every log line, the 5 s connection leak watch, and gzip on API responses (SSE never).
+    log_worker_tags: bool = True
+    pool_leak_watch: bool = True
+    gzip_enabled: bool = True
     # Only these peers may set X-Request-ID / X-Forwarded-For (comma-separated host
     # names or IPs; default: the Next.js server's compose service).
     trusted_proxy_hosts: str = "web"

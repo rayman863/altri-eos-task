@@ -8,11 +8,12 @@ import asyncio
 import logging
 import os
 import socket
+import time
 from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends, Request
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -108,3 +109,84 @@ async def wait_for_db(engine: AsyncEngine, *, attempts: int = 30, delay_s: float
                 extra={"attempt": attempt, "error": type(exc).__name__},
             )
             await asyncio.sleep(delay_s)
+
+
+class LeakWatch:
+    """Pool leak watch (plan 3.12 item 7, layer L5): a warning in the logs, with the
+    request id that took it, when a connection stays checked out of this worker's pool
+    longer than `threshold_s`.
+
+    Two signals: `run()` checks every second and warns once about a connection that is
+    still out (a real leak never comes back, so waiting for its return would never fire),
+    and the return itself logs how long it was held. Transactions here are short (a 5 s
+    statement timeout, 10 s idle-in-transaction timeout, SSE never holds a connection), so
+    either line means a bug worth finding by its request id.
+    """
+
+    def __init__(self, engine: AsyncEngine, threshold_s: float = 5.0) -> None:
+        # Deferred: app.logging imports nothing from here, but keep the module light.
+        from app.logging import request_id_var
+
+        self._request_id = request_id_var
+        self.threshold_s = threshold_s
+        self.out: dict[int, tuple[float, str | None]] = {}  # connection record -> taken
+        self.warned: set[int] = set()
+        self.pool = engine.sync_engine.pool
+        event.listen(self.pool, "checkout", self._checkout)
+        event.listen(self.pool, "checkin", self._checkin)
+
+    def _checkout(self, _dbapi: object, record: object, _proxy: object) -> None:
+        self.out[id(record)] = (time.monotonic(), self._request_id.get())
+
+    def _checkin(self, _dbapi: object, record: object) -> None:
+        taken = self.out.pop(id(record), None)
+        self.warned.discard(id(record))
+        if taken is None:
+            return
+        held_s = time.monotonic() - taken[0]
+        if held_s > self.threshold_s:
+            log.warning(
+                "db connection returned after a long checkout",
+                extra={"held_ms": round(held_s * 1000), "request_id": taken[1]},
+            )
+
+    def check(self) -> None:
+        now = time.monotonic()
+        for key, (since, request_id) in list(self.out.items()):
+            if now - since > self.threshold_s and key not in self.warned:
+                self.warned.add(key)
+                log.warning(
+                    f"db connection checked out for more than {self.threshold_s:g} s",
+                    extra={"held_ms": round((now - since) * 1000), "request_id": request_id},
+                )
+
+    async def run(self) -> None:
+        while True:
+            await asyncio.sleep(1.0)
+            self.check()
+
+    def stop(self) -> None:
+        event.remove(self.pool, "checkout", self._checkout)
+        event.remove(self.pool, "checkin", self._checkin)
+
+
+async def connection_budget(engine: AsyncEngine, settings: Settings) -> dict[str, int]:
+    """What this API can open at most, against the server's max_connections (plan 3.12):
+    API_WORKERS x (pool + overflow + its LISTEN connection). Logged once at startup
+    (app/preflight.py), as a warning above 80 %, so a scale-up that can't fit shows up
+    at once instead of under load."""
+    async with engine.connect() as conn:
+        limit = int((await conn.execute(text("SHOW max_connections"))).scalar_one())
+    per_worker = settings.db_pool_size + settings.db_max_overflow + 1
+    budget = {
+        "workers": settings.api_workers,
+        "per_worker": per_worker,
+        "total": settings.api_workers * per_worker,
+        "max_connections": limit,
+        "percent": round(100 * settings.api_workers * per_worker / limit),
+    }
+    if budget["percent"] > 80:
+        log.warning("db connection budget above 80% of max_connections", extra=budget)
+    else:
+        log.info("db connection budget", extra=budget)
+    return budget

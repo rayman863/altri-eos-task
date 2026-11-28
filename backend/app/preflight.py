@@ -27,6 +27,27 @@ async def _start_and_stop(app: FastAPI) -> None:
         pass
 
 
+async def _budget(app: FastAPI) -> None:
+    """The connection budget, once per start (not once per worker; plan 3.12, layer L5)."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from app import db
+
+    settings = app.state.settings
+    engine = create_async_engine(
+        settings.database_url,
+        poolclass=NullPool,
+        connect_args={
+            "server_settings": {"application_name": db.application_name("eos-api:preflight")}
+        },
+    )
+    try:
+        await db.connection_budget(engine, settings)
+    finally:
+        await engine.dispose()
+
+
 def main() -> int:
     try:
         from app.main import app  # settings are read and validated here
@@ -42,6 +63,10 @@ def main() -> int:
         log.exception("api preflight failed, so the api is not started")
         return 1
     log.info("api preflight passed")
+    try:
+        asyncio.run(_budget(app))
+    except Exception:  # noqa: BLE001 - only a report: it never stops the start
+        log.warning("could not check the db connection budget", exc_info=True)
     return 0
 
 

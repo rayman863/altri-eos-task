@@ -17,6 +17,18 @@ case "${CSP_MODE:-nonce}" in
     ;;
 esac
 
+# PM2's JSON log lines carry the worker id (process_id), so the two workers can be told
+# apart in one container's stream (layer L5); false gives PM2's plain lines. Read the way
+# the API reads the same variable (pydantic), so one value means the same in both containers.
+case "$(printf '%s' "${LOG_WORKER_TAGS:-true}" | tr '[:upper:]' '[:lower:]')" in
+  true | 1 | yes | on | t | y) pm2_logs=--json ;;
+  false | 0 | no | off | f | n) pm2_logs= ;;
+  *)
+    echo "LOG_WORKER_TAGS must be true or false, got: ${LOG_WORKER_TAGS}" >&2
+    exit 64
+    ;;
+esac
+
 case "${WEB_RUNNER:-pm2}" in
   pm2)
     # Checked here too: PM2 reports a config error but still exits 0.
@@ -24,7 +36,8 @@ case "${WEB_RUNNER:-pm2}" in
       echo "WEB_INSTANCES must be a positive whole number or \"max\", got: ${WEB_INSTANCES}" >&2
       exit 64
     fi
-    exec pm2-runtime --json ecosystem.config.cjs
+    # shellcheck disable=SC2086 # empty or one flag, on purpose unquoted
+    exec pm2-runtime $pm2_logs ecosystem.config.cjs
     ;;
   node) exec node -r ./edge-headers.cjs -r ./stream-shutdown.cjs server.js ;;
   *)

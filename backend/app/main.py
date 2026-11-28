@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -18,7 +19,14 @@ from app.cache import Cache
 from app.clock import clock_from_settings, parse_app_now
 from app.clock_anchor import anchored_clock
 from app.config import Settings, get_settings
-from app.db import application_name, make_engine, make_sessionmaker, pool_status, wait_for_db
+from app.db import (
+    LeakWatch,
+    application_name,
+    make_engine,
+    make_sessionmaker,
+    pool_status,
+    wait_for_db,
+)
 from app.errors import install_error_handlers
 from app.logging import RequestLogMiddleware, setup_logging
 from app.ratelimit import RateLimiter, limit_writes
@@ -39,6 +47,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         engine = make_engine(settings, settings.database_url, application_name("eos-api:pool"))
         await wait_for_db(engine)
         app.state.engine = engine
+        # Warns when a connection stays checked out over 5 s (layer L5, plan 3.12 item 7).
+        watch = LeakWatch(engine) if settings.pool_leak_watch else None
+        watcher = asyncio.create_task(watch.run()) if watch else None
         app.state.sessionmaker = make_sessionmaker(engine)
         if settings.app_clock_mode == "ticking":
             # One business clock for every worker and across restarts (plan 3.2).
@@ -65,6 +76,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await listener.stop()
             await app.state.cache.close()
             await app.state.rate_limiter.close()
+            if watcher is not None and watch is not None:
+                watcher.cancel()
+                watch.stop()
             await engine.dispose()
             log.info("api stopped")
 
@@ -104,6 +118,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body_limit=settings.log_body_limit,
         trusted_proxy_hosts=settings.trusted_proxy_host_list,
     )
+    if settings.gzip_enabled:
+        # Outermost (added last): the request log above still sees uncompressed bodies.
+        # Live streams are never compressed: a compression buffer would hold events back
+        # (Starlette skips text/event-stream by default; said here too, plan 3.16).
+        app.add_middleware(
+            GZipMiddleware,
+            minimum_size=1024,
+            compresslevel=6,
+            exclude_content_types=("text/event-stream",),
+        )
 
     @app.get("/healthz", tags=["Health"], summary="Liveness, database and pool check")
     async def healthz(request: Request) -> JSONResponse:
@@ -165,5 +189,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-setup_logging(get_settings().log_level)
+setup_logging(get_settings().log_level, worker_tags=get_settings().log_worker_tags)
 app = create_app()

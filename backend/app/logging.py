@@ -9,6 +9,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import os
 import re
 import secrets
 import sys
@@ -29,6 +30,8 @@ _SECRET_KEYS = re.compile(r"(password|secret|token|cookie|authorization|session)
 _STANDARD_ATTRS = set(vars(logging.LogRecord("", 0, "", 0, "", None, None))) | {
     "message",
     "asctime",
+    # Uvicorn adds an ANSI-coloured copy of its message for terminals; noise in JSON.
+    "color_message",
 }
 # Successful hits on these paths are logged at debug level: container healthchecks
 # would otherwise bury real traffic in Dozzle.
@@ -36,6 +39,18 @@ _QUIET_PATHS = frozenset({"/healthz"})
 
 
 class JsonFormatter(logging.Formatter):
+    """One JSON object per line. `worker` (the process id, layer L5) tells the Uvicorn
+    workers apart in one container's log stream, as on /healthz; LOG_WORKER_TAGS=false
+    leaves it out. Uvicorn's parent process uses this formatter too (log_config.json), so
+    the whole api stream is JSON, its own lines tagged with the parent's id."""
+
+    def __init__(self, worker_tags: bool | None = None) -> None:
+        super().__init__()
+        if worker_tags is None:  # built by logging.config (log_config.json): read the env
+            value = os.environ.get("LOG_WORKER_TAGS", "true").strip().lower()
+            worker_tags = value not in ("false", "0", "no", "off", "f", "n")  # as pydantic reads it
+        self.worker_tags = worker_tags
+
     def format(self, record: logging.LogRecord) -> str:
         entry: dict[str, Any] = {
             "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
@@ -43,6 +58,8 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
+        if self.worker_tags:
+            entry["worker"] = record.process
         rid = request_id_var.get()
         if rid:
             entry["request_id"] = rid
@@ -55,18 +72,23 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, default=str, ensure_ascii=False)
 
 
-def setup_logging(level: str, stream: TextIO = sys.stdout) -> None:
+def setup_logging(
+    level: str, stream: TextIO = sys.stdout, *, worker_tags: bool | None = None
+) -> None:
     """JSON logs on stdout for services. CLIs whose stdout is their output (the rules
     report) pass sys.stderr."""
     handler = logging.StreamHandler(stream)
-    handler.setFormatter(JsonFormatter())
+    handler.setFormatter(JsonFormatter(worker_tags))
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level.upper())
-    # Uvicorn's own access log is off (--no-access-log); our middleware replaces it.
+    # Uvicorn's own access log is off (--no-access-log); our middleware replaces it. Its
+    # loggers go through the root handler, at the root's level: Uvicorn sets them to INFO
+    # itself, which would print its info lines even with LOG_LEVEL=warning.
     for name in ("uvicorn", "uvicorn.error"):
         logging.getLogger(name).handlers[:] = []
         logging.getLogger(name).propagate = True
+        logging.getLogger(name).setLevel(logging.NOTSET)
 
 
 def new_request_id() -> str:

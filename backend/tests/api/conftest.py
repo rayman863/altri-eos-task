@@ -112,7 +112,9 @@ async def asgi_request(
         out_headers[name] = value
     parsed = (
         jsonlib.loads(raw)
-        if raw and out_headers.get("content-type", "").startswith("application/json")
+        if raw
+        and out_headers.get("content-type", "").startswith("application/json")
+        and "content-encoding" not in out_headers  # gzip (layer L5): the test reads `raw`
         else None
     )
     return Resp(start["status"], out_headers, parsed, raw, cookies)

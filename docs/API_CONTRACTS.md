@@ -9,7 +9,7 @@ Examples use the seed data at the default `APP_NOW` (`2026-11-11T15:00:00Z`, Wed
 | Topic | Rule |
 |---|---|
 | Base path | `/api/v1`. Breaking changes would go to `/api/v2`; within v1 changes are additive only. Exceptions at the root: `GET /healthz` (container healthcheck) and the docs (`/docs`, `/redoc`, `/openapi.json`) |
-| Format | JSON (`application/json; charset=utf-8`), UTF-8, `snake_case` field names |
+| Format | JSON (`application/json; charset=utf-8`), UTF-8, `snake_case` field names. Responses of 1 KB or more are gzipped for clients that send `Accept-Encoding: gzip` (layer L5); the live event stream never is |
 | Auth | Session cookie `eos_session` (signed, `HttpOnly`, `SameSite=Lax`). Every endpoint needs it except `GET /auth/users`, `POST /auth/login`, `GET /healthz` |
 | Writes | Every `POST`, `PUT`, `PATCH`, `DELETE` needs `Content-Type: application/json` and `X-EOS-CSRF: 1`. A write with no body sends `{}`. A browser `Origin`, if present, must be the web origin (plan 3.15) |
 | Request id | Every response carries `X-Request-ID` (generated, or propagated from the Next.js server). Errors repeat it in the body |

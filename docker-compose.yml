@@ -32,6 +32,11 @@ x-backend-env: &backend-env
   # Redis rate limits on writes (layer L4): 10 logins a minute per address, 30 Make it an
   # Issue and 120 other writes a minute per user. false: no limits.
   RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+  # Observability extras (layer L5): `worker` (process id) on every API log line, the 5 s
+  # connection leak watch, and gzip on API responses (never on live streams).
+  LOG_WORKER_TAGS: ${LOG_WORKER_TAGS:-true}
+  POOL_LEAK_WATCH: ${POOL_LEAK_WATCH:-true}
+  GZIP_ENABLED: ${GZIP_ENABLED:-true}
   API_WORKERS: ${API_WORKERS:-2}
   WEB_RUNNER: ${WEB_RUNNER:-pm2}
   WEB_INSTANCES: ${WEB_INSTANCES:-2}
@@ -62,7 +67,22 @@ x-hardening: &hardening
 
 services:
   db:
+    labels:
+      dev.dozzle.name: "Postgres"
+      dev.dozzle.group: infra
     image: postgres:17.12-alpine
+    # Log lines name their source (application_name, plan 3.12), and statements slower than
+    # 500 ms are logged, so slow queries show up in Dozzle next to the request that ran them.
+    command:
+      - postgres
+      - -c
+      - "log_line_prefix=%m [%p] %a %u@%d "
+      - -c
+      - log_min_duration_statement=500
+      # Never the bound values: they are user text (titles, notes), and payload logging has
+      # its own switch (LOG_PAYLOADS).
+      - -c
+      - log_parameter_max_length=0
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev_pw}
@@ -84,6 +104,9 @@ services:
   # only source of truth, so losing everything here only costs cache misses. Debian
   # (bookworm) like the API image.
   redis:
+    labels:
+      dev.dozzle.name: "Redis (cache, rate limits)"
+      dev.dozzle.group: infra
     image: redis:8.2.3-bookworm
     # A password like the database roles: a cached entry is served to users as is, so
     # only the app may write one.
@@ -109,6 +132,9 @@ services:
 
   # The backend image is built once, here; api and info reuse it.
   migrate:
+    labels:
+      dev.dozzle.name: "migrate + seed (one-shot)"
+      dev.dozzle.group: jobs
     build:
       context: ./backend
       target: runtime
@@ -127,6 +153,9 @@ services:
     restart: "no"
 
   api:
+    labels:
+      dev.dozzle.name: "backend (FastAPI)"
+      dev.dozzle.group: app
     image: eos-backend:local
     pull_policy: never
     <<: *hardening
@@ -147,6 +176,9 @@ services:
       <<: *healthcheck-timing
 
   web:
+    labels:
+      dev.dozzle.name: "frontend (Next.js / PM2)"
+      dev.dozzle.group: app
     build:
       context: ./frontend
       args:
@@ -160,6 +192,8 @@ services:
       WEB_INSTANCES: ${WEB_INSTANCES:-2}
       # Per-request nonce Content-Security-Policy (layer L4, frontend/src/proxy.ts); off: none.
       CSP_MODE: ${CSP_MODE:-nonce}
+      # PM2's JSON log lines, which carry the worker id (layer L5); false: plain lines.
+      LOG_WORKER_TAGS: ${LOG_WORKER_TAGS:-true}
     ports:
       - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-3000}:3000"
     depends_on:
@@ -171,6 +205,9 @@ services:
       <<: *healthcheck-timing
 
   logs:
+    labels:
+      dev.dozzle.name: "Dozzle (this viewer)"
+      dev.dozzle.group: infra
     image: amir20/dozzle:v11.5.0
     volumes:
       # Read-only mount, but the Docker API itself isn't limited by :ro (plan 3.10).
@@ -179,6 +216,9 @@ services:
       - "127.0.0.1:${LOGS_PORT:-8080}:8080"
 
   info:
+    labels:
+      dev.dozzle.name: "startup banner (one-shot)"
+      dev.dozzle.group: jobs
     image: eos-backend:local
     pull_policy: never
     <<: *hardening
@@ -200,6 +240,9 @@ services:
   # (same image as migrate) lets a fresh clone build on demand, and `--build` picks up code
   # edits; being in a profile keeps it out of `up` and `build`, so nothing builds twice.
   rules-report:
+    labels:
+      dev.dozzle.name: "rules report (on demand)"
+      dev.dozzle.group: jobs
     profiles: ["tools"]
     build:
       context: ./backend
@@ -226,6 +269,9 @@ services:
   #   docker compose --profile e2e stop api-e2e web-e2e
   # The first run downloads Microsoft's Playwright image (about 2 GB).
   e2e-seed:
+    labels:
+      dev.dozzle.name: "E2E seed"
+      dev.dozzle.group: e2e
     profiles: ["e2e"]
     build:
       context: ./backend
@@ -254,6 +300,9 @@ services:
     restart: "no"
 
   api-e2e:
+    labels:
+      dev.dozzle.name: "E2E backend (FastAPI)"
+      dev.dozzle.group: e2e
     profiles: ["e2e"]
     image: eos-backend:local
     pull_policy: never
@@ -272,6 +321,9 @@ services:
       <<: *healthcheck-timing
 
   web-e2e:
+    labels:
+      dev.dozzle.name: "E2E frontend (Next.js / PM2)"
+      dev.dozzle.group: e2e
     profiles: ["e2e"]
     build:
       context: ./frontend
@@ -286,6 +338,8 @@ services:
       WEB_INSTANCES: ${WEB_INSTANCES:-2}
       # Per-request nonce Content-Security-Policy (layer L4, frontend/src/proxy.ts); off: none.
       CSP_MODE: ${CSP_MODE:-nonce}
+      # PM2's JSON log lines, which carry the worker id (layer L5); false: plain lines.
+      LOG_WORKER_TAGS: ${LOG_WORKER_TAGS:-true}
     depends_on:
       api-e2e:
         condition: service_healthy
@@ -296,6 +350,9 @@ services:
 
   # The Playwright runner, in Microsoft's image with the matching browsers preinstalled.
   e2e:
+    labels:
+      dev.dozzle.name: "E2E runner (Playwright)"
+      dev.dozzle.group: e2e
     profiles: ["e2e"]
     image: mcr.microsoft.com/playwright:v1.65.1-noble
     working_dir: /e2e
@@ -328,6 +385,9 @@ services:
   #   docker compose run --rm tests pytest tests/rules
   # The backend source is mounted, so tests always run against the working tree.
   tests:
+    labels:
+      dev.dozzle.name: "backend tests (pytest)"
+      dev.dozzle.group: tests
     profiles: ["test"]
     build:
       context: ./backend
