@@ -42,6 +42,7 @@ export function ScoreCell({
     const parsed = ScoreValue.safeParse(raw);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Invalid score.");
+      handled.current = false; // still editing: a later blur may save a corrected value
       return;
     }
     setEditing(false);
@@ -65,6 +66,7 @@ export function ScoreCell({
 
   if (editing) {
     return (
+      <div className="flex flex-col items-center gap-0.5">
       <input
         ref={input}
         autoFocus
@@ -86,7 +88,14 @@ export function ScoreCell({
         onBlur={(e) => {
           if (!handled.current) save(e.currentTarget.value);
         }}
+        aria-invalid={error ? true : undefined}
       />
+      {error ? (
+        <span role="alert" className="text-destructive max-w-24 text-[10px] leading-tight">
+          {error}
+        </span>
+      ) : null}
+      </div>
     );
   }
 

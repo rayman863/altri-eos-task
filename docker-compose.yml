@@ -151,6 +151,100 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # ---- End-to-end tests (Phase 7) ----------------------------------------------------
+  # A separate stack for the browser tests: its own API and web server on the eos_test
+  # database with a frozen clock, so E2E runs never touch the demo data in `eos`. Only
+  # started on demand (profile "e2e"):
+  #   docker compose --profile e2e build e2e-seed web-e2e
+  #   docker compose run --rm e2e
+  #   docker compose --profile e2e stop api-e2e web-e2e
+  # The first run downloads Microsoft's Playwright image (about 2 GB).
+  e2e-seed:
+    profiles: ["e2e"]
+    build:
+      context: ./backend
+      target: runtime
+    image: eos-backend:local
+    # Fresh seed for every run: migrate eos_test, then wipe and reload it.
+    command: ["sh", "-c", "alembic upgrade head && python -m app.seed --reset"]
+    environment: &e2e-env
+      <<: *backend-env
+      APP_CLOCK_MODE: frozen
+      DATABASE_URL: postgresql+asyncpg://eos_app:${EOS_APP_PASSWORD:-eos_app_dev_pw}@db:5432/eos_test
+      OWNER_DATABASE_URL: postgresql+asyncpg://eos_owner:${EOS_OWNER_PASSWORD:-eos_owner_dev_pw}@db:5432/eos_test
+      READONLY_DATABASE_URL: postgresql+asyncpg://eos_readonly:${EOS_READONLY_PASSWORD:-eos_readonly_dev_pw}@db:5432/eos_test
+      TRUSTED_PROXY_HOSTS: web-e2e
+      WEB_ORIGIN: http://web-e2e:3000
+    volumes:
+      - ./seed:/seed:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api-e2e:
+    profiles: ["e2e"]
+    image: eos-backend:local
+    pull_policy: never
+    environment: *e2e-env
+    depends_on:
+      e2e-seed:
+        condition: service_completed_successfully
+    stop_grace_period: 25s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200 else 1)"
+      <<: *healthcheck-timing
+
+  web-e2e:
+    profiles: ["e2e"]
+    build:
+      context: ./frontend
+      args:
+        API_INTERNAL_URL: http://api-e2e:8000
+    image: eos-frontend-e2e:local
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      api-e2e:
+        condition: service_healthy
+    stop_grace_period: 25s
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      <<: *healthcheck-timing
+
+  # The Playwright runner, in Microsoft's image with the matching browsers preinstalled.
+  e2e:
+    profiles: ["e2e"]
+    image: mcr.microsoft.com/playwright:v1.65.1-noble
+    working_dir: /e2e
+    # npm's cache lives in a volume, so repeat runs install offline. The container runs as
+    # root, so its traces and screenshots are made deletable by anyone afterwards (on a
+    # Linux host they would otherwise be root-owned); the test exit status is kept.
+    command:
+      - sh
+      - -c
+      - >-
+        npm ci --prefer-offline --no-audit --no-fund --loglevel=error && npx playwright test;
+        status=$$?; chmod -R a+rwX test-results 2>/dev/null; exit $$status
+    environment:
+      E2E_BASE_URL: http://web-e2e:3000
+      # Only "trace-demo" breaks the meeting test on purpose (artifacts/README.md).
+      E2E_DEMO_FAILURE: ${E2E_DEMO_FAILURE:-}
+      npm_config_cache: /npm-cache
+      CI: "1"
+    volumes:
+      - ./e2e:/e2e
+      - e2e-node-modules:/e2e/node_modules
+      - e2e-npm-cache:/npm-cache
+    shm_size: 1gb  # Chromium needs more shared memory than Docker's 64 MB default
+    depends_on:
+      web-e2e:
+        condition: service_healthy
+
   # Test runner (plan section 6). Only starts on demand:
   #   docker compose run --rm tests                 (everything)
   #   docker compose run --rm tests pytest tests/rules
@@ -188,3 +282,5 @@ services:
 
 volumes:
   pgdata:
+  e2e-node-modules:
+  e2e-npm-cache:

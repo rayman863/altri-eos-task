@@ -32,3 +32,6 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+
+# Personal study notes, never part of the submission
+STUDY_GUIDE.md
