@@ -2,6 +2,7 @@ import { Suspense } from "react";
 
 import { SectionSkeleton } from "@/components/SectionSkeleton";
 import { IssuesSection } from "@/features/issues/IssuesSection";
+import { PastMeetingsSection } from "@/features/meeting/PastMeetingsSection";
 import { RocksSection } from "@/features/rocks/RocksSection";
 import { ScorecardSection } from "@/features/scorecard/ScorecardSection";
 import { TodosSection } from "@/features/todos/TodosSection";
@@ -34,6 +35,9 @@ export default async function TeamPage({ params }: PageProps<"/teams/[teamId]">)
       </div>
       <Suspense fallback={<SectionSkeleton rows={3} />}>
         <RocksSection teamId={teamId} editable={editable} />
+      </Suspense>
+      <Suspense fallback={<SectionSkeleton rows={2} />}>
+        <PastMeetingsSection teamId={teamId} />
       </Suspense>
     </div>
   );

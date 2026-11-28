@@ -371,3 +371,20 @@ class MeetingSummary(Out):
     attendee_ids: list[str]
     rating: float | None
     labels: SummaryLabels
+
+
+class PastMeeting(Out):
+    """One ended meeting, described from its frozen summary (counts, not the lists)."""
+
+    id: str
+    started_at: datetime
+    ended_at: datetime
+    facilitator: UserRef
+    rating: float | None
+    attendee_count: int
+    issues_solved: int
+    todos_created: int
+
+
+class PastMeetingList(Out):
+    items: list[PastMeeting]

@@ -56,4 +56,15 @@ test("two browsers follow one meeting from start to summary", async ({ signIn })
   await expect(blake.getByRole("heading", { name: "Level 10 Meeting summary" })).toBeVisible();
   await expect(blake.getByText("8.0", { exact: true })).toBeVisible();
   await expect(blake.getByText("Blake Brooks, Casey Cho")).toBeVisible(); // attendees by id
+
+  // Back on the team page, Past meetings lists it first, ahead of the two seeded ones, and
+  // links back to the same summary.
+  const summaryUrl = blake.url();
+  await blake.getByRole("link", { name: "Back to the team" }).click();
+  const past = blake.getByRole("region", { name: "Past meetings" }).getByRole("link");
+  await expect(past).toHaveCount(3);
+  await expect(past.first()).toContainText("Facilitated by Casey Cho · 2 attendees");
+  await expect(past.first()).toContainText("8.0");
+  await past.first().click();
+  await expect(blake).toHaveURL(summaryUrl);
 });

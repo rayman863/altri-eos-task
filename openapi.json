@@ -900,6 +900,79 @@
         "title": "MilestoneOut",
         "type": "object"
       },
+      "PastMeeting": {
+        "description": "One ended meeting, described from its frozen summary (counts, not the lists).",
+        "properties": {
+          "attendee_count": {
+            "title": "Attendee Count",
+            "type": "integer"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "title": "Ended At",
+            "type": "string"
+          },
+          "facilitator": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "issues_solved": {
+            "title": "Issues Solved",
+            "type": "integer"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "todos_created": {
+            "title": "Todos Created",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "started_at",
+          "ended_at",
+          "facilitator",
+          "rating",
+          "attendee_count",
+          "issues_solved",
+          "todos_created"
+        ],
+        "title": "PastMeeting",
+        "type": "object"
+      },
+      "PastMeetingList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PastMeeting"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PastMeetingList",
+        "type": "object"
+      },
       "Rating": {
         "properties": {
           "rating": {
@@ -2727,6 +2800,50 @@
       }
     },
     "/api/v1/teams/{team_id}/meetings": {
+      "get": {
+        "description": "Ended meetings, newest first, each linking to its frozen summary.",
+        "operationId": "past_meetings_api_v1_teams__team_id__meetings_get",
+        "parameters": [
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PastMeetingList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Past Meetings",
+        "tags": [
+          "Meetings"
+        ]
+      },
       "post": {
         "operationId": "start_meeting_api_v1_teams__team_id__meetings_post",
         "parameters": [

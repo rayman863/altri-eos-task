@@ -317,6 +317,47 @@ async def rate(
     return {"user_id": access.user.id, "rating": rating}
 
 
+async def past_meetings(
+    session: AsyncSession, team_id: str, cache: RequestCache | None = None
+) -> dict[str, Any]:
+    """The team's ended meetings, newest first, each described from its frozen summary, so
+    the list always agrees with the summary page (plan 3.9). Cached per team version:
+    ending a meeting bumps it."""
+    if cache is None:
+        return await _past_meetings(session, team_id)
+    version, _ = await team_state(session, team_id)
+    return await cache.get_or_set(
+        f"team:{team_id}:v{version}:meetings:past",
+        cache.cache.ttl_team,
+        lambda: _past_meetings(session, team_id),
+    )
+
+
+async def _past_meetings(session: AsyncSession, team_id: str) -> dict[str, Any]:
+    rows = await session.scalars(
+        select(m.MeetingSummary.summary)
+        .join(m.Meeting, m.Meeting.id == m.MeetingSummary.meeting_id)
+        .where(m.Meeting.team_id == team_id, m.Meeting.ended_at.is_not(None))
+        .order_by(m.Meeting.ended_at.desc(), m.Meeting.id)
+    )
+    items = []
+    for snap in rows:
+        facilitator = snap["facilitator_id"]
+        items.append(
+            {
+                "id": snap["meeting_id"],
+                "started_at": snap["started_at"],
+                "ended_at": snap["ended_at"],
+                "facilitator": {"id": facilitator, "name": snap["labels"]["users"][facilitator]},
+                "rating": snap["rating"],
+                "attendee_count": len(snap["attendee_ids"]),
+                "issues_solved": len(snap["issues_solved"]),
+                "todos_created": len(snap["todos_created"]),
+            }
+        )
+    return {"items": items}
+
+
 async def summary(
     session: AsyncSession, meeting_id: str, cache: RequestCache | None = None
 ) -> dict[str, Any]:

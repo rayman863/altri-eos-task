@@ -358,7 +358,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Past Meetings
+         * @description Ended meetings, newest first, each linking to its frozen summary.
+         */
+        get: operations["past_meetings_api_v1_teams__team_id__meetings_get"];
         put?: never;
         /** Start Meeting */
         post: operations["start_meeting_api_v1_teams__team_id__meetings_post"];
@@ -849,6 +853,38 @@ export interface components {
             past_due: boolean;
             /** Title */
             title: string;
+        };
+        /**
+         * PastMeeting
+         * @description One ended meeting, described from its frozen summary (counts, not the lists).
+         */
+        PastMeeting: {
+            /** Attendee Count */
+            attendee_count: number;
+            /**
+             * Ended At
+             * Format: date-time
+             */
+            ended_at: string;
+            facilitator: components["schemas"]["UserRef"];
+            /** Id */
+            id: string;
+            /** Issues Solved */
+            issues_solved: number;
+            /** Rating */
+            rating: number | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Todos Created */
+            todos_created: number;
+        };
+        /** PastMeetingList */
+        PastMeetingList: {
+            /** Items */
+            items: components["schemas"]["PastMeeting"][];
         };
         /** Rating */
         Rating: {
@@ -1839,6 +1875,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MadeIssue"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    past_meetings_api_v1_teams__team_id__meetings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team id, e.g. team_lead */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PastMeetingList"];
                 };
             };
             /** @description Validation Error */

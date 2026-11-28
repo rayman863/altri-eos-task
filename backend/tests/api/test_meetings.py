@@ -243,6 +243,60 @@ def test_seeded_meeting_summary_matches_the_contract(login):
     }
 
 
+PAST = "/teams/team_lead/meetings"
+
+
+def test_past_meetings_list_the_seeded_ones_newest_first(login):
+    body = login("u5").get(PAST).body  # an Observer reads it too
+    assert [item["id"] for item in body["items"]] == ["mt2", "mt1"]
+    assert body["items"][0] == {
+        "id": "mt2",
+        "started_at": "2026-11-04T15:00:00Z",
+        "ended_at": "2026-11-04T16:20:00Z",
+        "facilitator": {"id": "u2", "name": "Blake Brooks"},
+        "rating": 8.3,
+        "attendee_count": 5,
+        "issues_solved": 1,
+        "todos_created": 1,
+    }
+    assert login("u6").get("/teams/team_sales/meetings").body == {"items": []}
+
+
+def test_every_past_meeting_agrees_with_its_frozen_summary(login):
+    u3 = login("u3")
+    for item in u3.get(PAST).body["items"]:
+        summary = u3.get(f"/meetings/{item['id']}/summary").body
+        assert item == {
+            "id": summary["meeting_id"],
+            "started_at": summary["started_at"],
+            "ended_at": summary["ended_at"],
+            "facilitator": {
+                "id": summary["facilitator_id"],
+                "name": summary["labels"]["users"][summary["facilitator_id"]],
+            },
+            "rating": summary["rating"],
+            "attendee_count": len(summary["attendee_ids"]),
+            "issues_solved": len(summary["issues_solved"]),
+            "todos_created": len(summary["todos_created"]),
+        }
+
+
+def test_a_meeting_joins_the_list_only_once_it_ends(app, meeting, login):
+    facilitator, state = meeting
+    reader = login("u2")
+    assert [i["id"] for i in reader.get(PAST).body["items"]] == ["mt2", "mt1"]  # active: not yet
+    facilitator.put(f"/meetings/{state['id']}/rating", {"rating": 7})
+    tick(app, minutes=30)
+    assert facilitator.post(f"/meetings/{state['id']}/end").status == 200
+    items = reader.get(PAST).body["items"]  # the cached list was for the old team version
+    assert [i["id"] for i in items] == [state["id"], "mt2", "mt1"]
+    assert {k: items[0][k] for k in ("facilitator", "rating", "attendee_count")} == {
+        "facilitator": {"id": "u3", "name": "Casey Cho"},
+        "rating": 7.0,
+        "attendee_count": 1,
+    }
+
+
 def test_unknown_meetings(login):
     assert login("u1").get("/meetings/mt_nope").error == "not_found"
     assert login("u3").post("/meetings/mt_nope/join").error == "not_found"

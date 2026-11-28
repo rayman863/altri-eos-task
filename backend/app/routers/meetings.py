@@ -14,6 +14,7 @@ from app.schemas import (
     Empty,
     MeetingState,
     MeetingSummary,
+    PastMeetingList,
     RatingIn,
     RatingOut,
 )
@@ -31,6 +32,12 @@ SSE_HEADERS = {
 @router.get("/teams/{team_id}/meetings/active", response_model=ActiveMeeting)
 async def active_meeting(access: TeamRead, session: DbSession, now: Now, cache: ReadCache) -> dict:
     return {"meeting": await meetings.read_active_meeting(session, cache, access.team_id, now)}
+
+
+@router.get("/teams/{team_id}/meetings", response_model=PastMeetingList)
+async def past_meetings(access: TeamRead, session: DbSession, cache: ReadCache) -> dict:
+    """Ended meetings, newest first, each linking to its frozen summary."""
+    return await meetings.past_meetings(session, access.team_id, cache)
 
 
 @router.post("/teams/{team_id}/meetings", response_model=MeetingState, status_code=201)

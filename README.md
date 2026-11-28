@@ -28,7 +28,7 @@ Every setting has a default; copy `.env.example` to `.env` to change one. Each p
 One command, unattended: **`make test`**. Without `make` (Windows), the same steps:
 
 ```
-docker compose run --rm tests                                              # 488 rule, DB, API, cache, security tests
+docker compose run --rm tests                                              # 494 rule, DB, API, cache, security tests
 docker compose run --rm -e CACHE_ENABLED=false tests pytest tests/api      # the API tests again, cache off
 docker run --rm -v "${PWD}/frontend:/app:ro" -w /app node:24.22.3-alpine npm run --silent test:server   # 10 web server tests
 docker compose --profile e2e build e2e-seed web-e2e
@@ -38,7 +38,7 @@ docker compose --profile e2e stop api-e2e web-e2e
 
 - **Rules:** every rule of brief 2.6 at its boundaries, including daylight saving, half-up rounding (8.25 → 8.3) and exactly 90 %.
 - **API:** every route against every role (a route-table test fails any route added without a guard), 20 concurrent "Make it an Issue" clicks making exactly one Issue (for a cell, a Rock and a To-Do), CSRF, validation, rate limits, live updates across two real API processes, the cache, and an OpenAPI contract drift check.
-- **Browser:** two browsers in one meeting (start, join, follow every section within 2 s, reload mid-meeting, rate, end, both on the summary), live score edits, Make it an Issue (from a cell, a To-Do and a Rock), XSS shown as text, the Observer's read-only view, server-rendered HTML, two lost-update cases. Any CSP violation fails a test.
+- **Browser:** two browsers in one meeting (start, join, follow every section within 2 s, reload mid-meeting, rate, end, both on the summary, then listed first under Past meetings), live score edits, Make it an Issue (from a cell, a To-Do and a Rock), XSS shown as text, the Observer's read-only view, server-rendered HTML, two lost-update cases. Any CSP violation fails a test.
 - **Fixture and clock:** all tests run at `APP_NOW=2026-11-11T15:00:00Z` on a frozen clock, against a separate `eos_test` database that is truncated and reseeded for every test, so they never touch the demo data. Rate limits are off except in their own tests. The browser tests run on their own stack, reseeded per run.
 - **Failure artifact:** [artifacts/e2e-failure-trace.zip](artifacts/e2e-failure-trace.zip), from a deliberately broken run ([how](artifacts/README.md)); open it at https://trace.playwright.dev.
 
@@ -57,6 +57,7 @@ docker compose --progress quiet run --rm --build -e APP_NOW=2026-11-18T15:00:00Z
 - **Meetings:** one active meeting per team; whoever starts it facilitates and alone moves it along or ends it. Ending freezes the summary; later edits never change it.
 - **Access errors:** a team you can't access is `403`, even for an id that doesn't exist, so ids can't be probed (Admins get `404`).
 - **New To-Dos** from an Issue are due in 7 days, company time.
+- **Past meetings:** the team page lists ended meetings, each linking to its frozen summary. The brief puts a meeting history page out of scope; this small list is an extra, added so the seeded summaries can be found without typing their URL.
 
 ## Known limitations
 

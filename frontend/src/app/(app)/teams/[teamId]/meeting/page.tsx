@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { IssuesSection } from "@/features/issues/IssuesSection";
 import { advanceMeeting, endMeeting, joinMeeting, rateMeeting, startMeeting } from "@/features/meeting/actions";
 import { FacilitatorControls, JoinOnMount, MeetingHeader, RatingPicker } from "@/features/meeting/MeetingClient.client";
+import { PastMeetingsSection } from "@/features/meeting/PastMeetingsSection";
 import { StartMeetingForm } from "@/features/meeting/StartMeetingForm.client";
 import { ScorecardSection } from "@/features/scorecard/ScorecardSection";
 import { getActiveMeeting, getMe, getTodos } from "@/lib/api/queries";
@@ -76,24 +77,29 @@ export default async function MeetingPage({ params }: PageProps<"/teams/[teamId]
 
   if (!meeting) {
     return (
-      <div className="mx-auto max-w-lg space-y-4 rounded-xl border p-8 text-center">
-        <h2 className="text-xl font-semibold">No meeting running</h2>
-        {editable ? (
-          <>
-            <p className="text-muted-foreground text-sm">
-              Starting the Level 10 Meeting makes you its facilitator. It reviews the last closed
-              week&apos;s Scorecard, then IDS, then Conclude.
-            </p>
-            <StartMeetingForm action={startMeeting.bind(null, teamId)} />
-          </>
-        ) : (
-          <p className="text-muted-foreground text-sm">An Admin or Team Member starts the meeting; you can join it then.</p>
-        )}
-        <p className="text-sm">
-          <Link href={`/teams/${teamId}`} className="underline">
-            Back to the team
-          </Link>
-        </p>
+      <div className="mx-auto max-w-lg space-y-8">
+        <div className="space-y-4 rounded-xl border p-8 text-center">
+          <h2 className="text-xl font-semibold">No meeting running</h2>
+          {editable ? (
+            <>
+              <p className="text-muted-foreground text-sm">
+                Starting the Level 10 Meeting makes you its facilitator. It reviews the last closed
+                week&apos;s Scorecard, then IDS, then Conclude.
+              </p>
+              <StartMeetingForm action={startMeeting.bind(null, teamId)} />
+            </>
+          ) : (
+            <p className="text-muted-foreground text-sm">An Admin or Team Member starts the meeting; you can join it then.</p>
+          )}
+          <p className="text-sm">
+            <Link href={`/teams/${teamId}`} className="underline">
+              Back to the team
+            </Link>
+          </p>
+        </div>
+        <Suspense fallback={<SectionSkeleton rows={2} />}>
+          <PastMeetingsSection teamId={teamId} />
+        </Suspense>
       </div>
     );
   }

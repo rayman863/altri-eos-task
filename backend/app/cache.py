@@ -3,10 +3,11 @@
 Postgres stays the only source of truth; Redis may be empty, outdated or down and every
 read is still correct:
 
-- **Team read models** (Scorecard, Issues, To-Dos, Rocks, meeting state) are keyed by the team's
-  `cache_version`, read from Postgres first. Every team write bumps it in the same
-  transaction (`services.common.bump_team`), so an entry built before a write is never
-  read after it. Nothing is ever deleted; old entries expire through their TTL.
+- **Team read models** (Scorecard, Issues, To-Dos, Rocks, meeting state, past meetings)
+  are keyed by the team's `cache_version`, read from Postgres first. Every team write
+  bumps it in the same transaction (`services.common.bump_team`), so an entry built
+  before a write is never read after it. Nothing is ever deleted; old entries expire
+  through their TTL.
 - **Reference data** (users and access facts, team members, ended-meeting summaries) can
   only change through the seed, and every seed run replaces the
   database's *generation*, a random token in `eos:<database>:gen` that is part of every

@@ -122,6 +122,7 @@ Access is checked before anything else, including the cache (plan 3.14). An inac
 | `GET /teams/{team_id}/rocks` | Team read | 200 | 403 |
 | `POST /teams/{team_id}/rocks/{rock_id}/issue` (bonus 3) | Team write | 201 created, 200 existing | 403, 404, 422 `rock_not_off_track`, 429 |
 | `GET /teams/{team_id}/meetings/active` | Team read | 200 | 403 |
+| `GET /teams/{team_id}/meetings` | Team read | 200 | 403 |
 | `POST /teams/{team_id}/meetings` | Team write | 201 | 403, 409 `meeting_already_active` |
 | `GET /meetings/{meeting_id}` | Team read | 200 | 403, 404 |
 | `POST /meetings/{meeting_id}/join` | Team read | 200 | 403, 404, 409 `meeting_ended` |
@@ -450,6 +451,39 @@ The frozen snapshot (plan 3.9), never recomputed. Its core fields match the rule
 ```
 
 `rating` is a number with one decimal (half up), or `null` if nobody rated. An active meeting gives `409 meeting_not_ended`.
+
+### `GET /teams/{team_id}/meetings` (past meetings)
+
+The team's ended meetings, newest first, for the "Past meetings" list. Each item is built from that meeting's frozen summary (above), so the two always agree: later edits change neither. An active meeting appears only once it ends. No pagination (one company's data). Seed data, `team_lead`:
+
+```json
+{
+  "items": [
+    {
+      "id": "mt2",
+      "started_at": "2026-11-04T15:00:00Z",
+      "ended_at": "2026-11-04T16:20:00Z",
+      "facilitator": { "id": "u2", "name": "Blake Brooks" },
+      "rating": 8.3,
+      "attendee_count": 5,
+      "issues_solved": 1,
+      "todos_created": 1
+    },
+    {
+      "id": "mt1",
+      "started_at": "2026-10-28T15:00:00Z",
+      "ended_at": "2026-10-28T16:15:00Z",
+      "facilitator": { "id": "u3", "name": "Casey Cho" },
+      "rating": 8.0,
+      "attendee_count": 5,
+      "issues_solved": 1,
+      "todos_created": 1
+    }
+  ]
+}
+```
+
+`issues_solved` and `todos_created` are counts here; the summary has the ids and titles. A team with no ended meetings gives `{"items": []}`.
 
 ## 10. Live updates: `GET /teams/{team_id}/events`
 

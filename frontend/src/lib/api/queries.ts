@@ -74,3 +74,8 @@ export const getSummary = cache(
     );
   },
 );
+
+export const getPastMeetings = cache(async (teamId: string): Promise<Schemas["PastMeetingList"]> => {
+  const api = await apiClient();
+  return read(api.GET("/api/v1/teams/{team_id}/meetings", { params: { path: { team_id: teamId } } }));
+});
