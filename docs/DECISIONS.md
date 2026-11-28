@@ -14,10 +14,9 @@ The five decisions the brief asks about (section 2.8), each with its cost. Every
 
 ## Beyond the five
 
-Built behind switches, each reviewed: two API workers, a PM2 cluster for Next.js, a Redis cache keyed by Postgres versions (it can't serve stale data), a nonce CSP with rate limits and locked-down containers, and observability (worker-tagged logs, a leak watch, gzip). Bonuses built: lost-update protection (`If-Match` on score and priority edits) and the [1,000-companies note](SCALING.md).
+Built behind switches, each reviewed: two API workers, a PM2 cluster for Next.js, a Redis cache keyed by Postgres versions (it can't serve stale data), a nonce CSP with rate limits and locked-down containers, and observability (worker-tagged logs, a leak watch, gzip). Bonuses built: lost-update protection (`If-Match` on score and priority edits), Make it an Issue from an off-track Rock or an overdue To-Do (the same index-plus-lock pattern as decision 4, with its own 20-click test), and the [1,000-companies note](SCALING.md).
 
-**Not built, and how I would do it:**
+**Not built, and how I would do it** (fuller plans in [FUTURE_WORK.md](FUTURE_WORK.md)):
 
 - **Activity log:** row triggers write an outbox in the same transaction; a worker moves it into a separate append-only database, behind an Admin page with search and before/after diffs (plan, section 3.18).
 - **Signed Next.js-to-API requests:** HMAC-SHA256 over method, path, timestamp, nonce and body hash, keys derived per direction, nonces single-use in Redis, responses signed against the request nonce. Proves origin, not privacy (that needs TLS).
-- **Make it an Issue from a Rock or To-Do:** the source columns exist; add two partial unique indexes and reuse the Measurable endpoint's pattern and concurrency test.

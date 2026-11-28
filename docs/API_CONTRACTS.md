@@ -60,6 +60,8 @@ Every error, whatever the status, has the same shape:
 | 415 | `unsupported_media_type` | Write that isn't `application/json` |
 | 422 | `validation_failed` | Field errors; `details.fields` is a list of `{loc, msg}` |
 | 422 | `cell_not_off_track` | Make it an Issue on a cell that isn't off track (and has no open Issue) |
+| 422 | `rock_not_off_track` | Make it an Issue on a Rock that isn't off track (and has no open Issue; bonus 3) |
+| 422 | `todo_not_overdue` | Make it an Issue on a To-Do that isn't overdue (and has no open Issue; bonus 3) |
 | 422 | `owner_not_eligible` | Owner is an Observer, or not an Admin or member of the team |
 | 422 | `week_out_of_range` | Week isn't a Monday inside the 13 shown weeks |
 | 429 | `rate_limited` | Over a rate limit; `Retry-After` header set (seconds). Limits (layer L4, one-minute windows in Redis): 10 logins per client address, 30 Make it an Issue and 120 other writes per user; reads are never limited. Open live streams: 5 per user on each API worker. Logout is never limited. Redis down: no limits rather than errors |
@@ -116,7 +118,9 @@ Access is checked before anything else, including the cache (plan 3.14). An inac
 | `POST /issues/{issue_id}/todos` | Team write | 201 | 403, 404, 422 `owner_not_eligible` |
 | `GET /teams/{team_id}/todos` | Team read | 200 | 403 |
 | `PUT /todos/{todo_id}/done` | Team write | 200 | 403, 404 |
+| `POST /todos/{todo_id}/issue` (bonus 3) | Team write | 201 created, 200 existing | 403, 404, 422 `todo_not_overdue`, 429 |
 | `GET /teams/{team_id}/rocks` | Team read | 200 | 403 |
+| `POST /teams/{team_id}/rocks/{rock_id}/issue` (bonus 3) | Team write | 201 created, 200 existing | 403, 404, 422 `rock_not_off_track`, 429 |
 | `GET /teams/{team_id}/meetings/active` | Team read | 200 | 403 |
 | `POST /teams/{team_id}/meetings` | Team write | 201 | 403, 409 `meeting_already_active` |
 | `GET /meetings/{meeting_id}` | Team read | 200 | 403, 404 |
@@ -271,7 +275,7 @@ Seed example, `m1` week `2026-11-02` (already has `i5`): `200`
 
 ### `GET /teams/{team_id}/issues?status=unsolved`
 
-Unsolved Issues in Issue order (priority 5 to 1, oldest first within a priority, no priority last). Leadership at the seed: `i2, i1, i5, i3, i4`. Each item has the shape shown under *Make it an Issue*.
+Unsolved Issues in Issue order (priority 5 to 1, oldest first within a priority, no priority last). Leadership at the seed: `i2, i1, i5, i3, i4`. Each item has the shape shown under *Make it an Issue*. `source` is `null` for an Issue added by hand, or tells where it was made, by `kind`: `measurable_week` (`measurable_id`, `measurable_name`, `week_start`), `rock` (`rock_id`, `rock_title`) or `todo` (`todo_id`, `todo_title`); the last two come with bonus 3.
 
 `?status=solved` returns solved Issues, newest `solved_at` first, with `solved_at` and `resolution_note` set. Leadership at the seed: `i6, i7`.
 
@@ -308,7 +312,8 @@ Open To-Dos first (by due date), then done ones (newest first), plus last closed
       "done_at": null,
       "overdue": true,
       "source_issue": null,
-      "created_at": "2026-10-25T21:00:00Z"
+      "created_at": "2026-10-25T21:00:00Z",
+      "open_issue_id": null
     }
   ],
   "last_closed_week_completion": {
@@ -327,11 +332,15 @@ Leadership at the seed: overdue = `t12`, `t31`; `t30` (due today) is not overdue
 
 Request `{ "done": true }` sets `done_at` to now; `{ "done": false }` clears it. Idempotent: marking a done To-Do done again keeps its original `done_at`. Response `200` with the To-Do.
 
+### `POST /todos/{todo_id}/issue` (bonus 3)
+
+Make it an Issue from an overdue To-Do, with the same rules as for a Scorecard cell (section 5): `201` with `{ "created": true, "issue": {...} }`, or `200` with `created: false` and the To-Do's open Issue if it has one (simultaneous clicks make exactly one, guaranteed by a partial unique index). A To-Do that isn't overdue gives `422 todo_not_overdue`. The Issue is titled `Overdue To-Do: <title>`, owned by the caller, with `"source": { "kind": "todo", "todo_id": "t12", "todo_title": "Publish hiring ad" }`; the To-Do's `open_issue_id` points at it until it is solved.
+
 ## 8. Rocks
 
 ### `GET /teams/{team_id}/rocks`
 
-Current quarter only; read-only.
+Current quarter only; read-only, except for Make it an Issue (below).
 
 ```json
 {
@@ -347,13 +356,18 @@ Current quarter only; read-only.
       "milestones": [
         { "id": "ms4", "title": "Job description approved", "due_date": "2026-10-10", "done": true, "past_due": false },
         { "id": "ms5", "title": "Shortlist of 5", "due_date": "2026-11-10", "done": false, "past_due": true }
-      ]
+      ],
+      "open_issue_id": null
     }
   ]
 }
 ```
 
 (`r2` has 8 Milestones, ordered by due date; shortened.) `status` follows the brief's rule, so `r2` is off track because `ms5` is past due, even though it was seeded on track.
+
+### `POST /teams/{team_id}/rocks/{rock_id}/issue` (bonus 3)
+
+Make it an Issue from an off-track Rock of this quarter, with the same rules as for a Scorecard cell (section 5): `201` new or `200` with the Rock's open Issue, never a second one; a Rock that isn't off track gives `422 rock_not_off_track`, and one of another team or quarter `404`. The Issue is titled `Rock off track: <title>`, with `"source": { "kind": "rock", "rock_id": "r2", "rock_title": "Hire VP of Sales" }`; the Rock's `open_issue_id` points at it until it is solved. Leadership at the seed: `r2` and `r4` are off track.
 
 ## 9. Meetings
 

@@ -4,8 +4,18 @@ from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Path, Query, Response
+from fastapi import Path as PathParam
 
-from app.authz import IssueWrite, MeasurableIdPath, Now, SignedIn, TeamRead, TeamWrite, TodoWrite
+from app.authz import (
+    ID_PATTERN,
+    IssueWrite,
+    MeasurableIdPath,
+    Now,
+    SignedIn,
+    TeamRead,
+    TeamWrite,
+    TodoWrite,
+)
 from app.cache import ReadCache
 from app.db import DbSession
 from app.preconditions import IfMatchHeader, etag, expected_versions
@@ -190,3 +200,53 @@ async def set_todo_done(access: TodoWrite, body: TodoDoneIn, session: DbSession,
 @router.get("/teams/{team_id}/rocks", response_model=RockList, tags=["Rocks"])
 async def list_rocks(access: TeamRead, session: DbSession, now: Now, cache: ReadCache) -> dict:
     return await rocks.list_rocks(session, access.team_id, now, cache)
+
+
+# ---- Make it an Issue from a Rock or a To-Do (bonus 3) --------------------------------------
+
+RockIdPath = Annotated[str, PathParam(pattern=ID_PATTERN, description="Rock id, e.g. r2")]
+MADE = {
+    201: {"description": "A new Issue was created (`created: true`)"},
+    200: {"model": MadeIssue, "description": "An open Issue already existed (`created: false`)"},
+}
+
+
+@router.post(
+    "/teams/{team_id}/rocks/{rock_id}/issue",
+    response_model=MadeIssue,
+    status_code=201,
+    responses=MADE,
+    tags=["Rocks"],
+    summary="Make it an Issue from an off-track Rock (201 created, 200 existing)",
+)
+async def make_rock_issue(
+    access: TeamWrite,
+    rock_id: RockIdPath,
+    response: Response,
+    session: DbSession,
+    now: Now,
+    body: Empty | None = None,
+) -> dict:
+    issue, created = await rocks.make_issue_from_rock(session, access, rock_id, now)
+    response.status_code = 201 if created else 200
+    return {"created": created, "issue": issue}
+
+
+@router.post(
+    "/todos/{todo_id}/issue",
+    response_model=MadeIssue,
+    status_code=201,
+    responses=MADE,
+    tags=["To-Dos"],
+    summary="Make it an Issue from an overdue To-Do (201 created, 200 existing)",
+)
+async def make_todo_issue(
+    access: TodoWrite,
+    response: Response,
+    session: DbSession,
+    now: Now,
+    body: Empty | None = None,
+) -> dict:
+    issue, created = await todos.make_issue_from_todo(session, access, access.resource_id, now)
+    response.status_code = 201 if created else 200
+    return {"created": created, "issue": issue}

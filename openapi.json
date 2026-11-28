@@ -330,12 +330,31 @@
           "source": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/IssueSource"
+                "discriminator": {
+                  "mapping": {
+                    "measurable_week": "#/components/schemas/IssueSource",
+                    "rock": "#/components/schemas/RockIssueSource",
+                    "todo": "#/components/schemas/TodoIssueSource"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/IssueSource"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RockIssueSource"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TodoIssueSource"
+                  }
+                ]
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Source"
           },
           "title": {
             "title": "Title",
@@ -406,6 +425,7 @@
         "type": "object"
       },
       "IssueSource": {
+        "description": "A Scorecard cell (Make it an Issue on an off-track cell).",
         "properties": {
           "kind": {
             "const": "measurable_week",
@@ -932,6 +952,31 @@
         "title": "RatingOut",
         "type": "object"
       },
+      "RockIssueSource": {
+        "description": "An off-track Rock (bonus 3).",
+        "properties": {
+          "kind": {
+            "const": "rock",
+            "title": "Kind",
+            "type": "string"
+          },
+          "rock_id": {
+            "title": "Rock Id",
+            "type": "string"
+          },
+          "rock_title": {
+            "title": "Rock Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "rock_id",
+          "rock_title"
+        ],
+        "title": "RockIssueSource",
+        "type": "object"
+      },
       "RockList": {
         "properties": {
           "items": {
@@ -966,6 +1011,18 @@
             "title": "Milestones",
             "type": "array"
           },
+          "open_issue_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The unsolved Issue made from this Rock",
+            "title": "Open Issue Id"
+          },
           "owner": {
             "$ref": "#/components/schemas/UserRef"
           },
@@ -998,7 +1055,8 @@
           "seeded_status",
           "status",
           "progress_percent",
-          "milestones"
+          "milestones",
+          "open_issue_id"
         ],
         "title": "RockOut",
         "type": "object"
@@ -1263,6 +1321,31 @@
         "title": "TodoDoneIn",
         "type": "object"
       },
+      "TodoIssueSource": {
+        "description": "An overdue To-Do (bonus 3).",
+        "properties": {
+          "kind": {
+            "const": "todo",
+            "title": "Kind",
+            "type": "string"
+          },
+          "todo_id": {
+            "title": "Todo Id",
+            "type": "string"
+          },
+          "todo_title": {
+            "title": "Todo Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "todo_id",
+          "todo_title"
+        ],
+        "title": "TodoIssueSource",
+        "type": "object"
+      },
       "TodoList": {
         "properties": {
           "items": {
@@ -1325,6 +1408,18 @@
             "title": "Id",
             "type": "string"
           },
+          "open_issue_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The unsolved Issue made from this To-Do",
+            "title": "Open Issue Id"
+          },
           "overdue": {
             "title": "Overdue",
             "type": "boolean"
@@ -1355,7 +1450,8 @@
           "done_at",
           "overdue",
           "source_issue",
-          "created_at"
+          "created_at",
+          "open_issue_id"
         ],
         "title": "TodoOut",
         "type": "object"
@@ -2782,6 +2878,90 @@
         ]
       }
     },
+    "/api/v1/teams/{team_id}/rocks/{rock_id}/issue": {
+      "post": {
+        "operationId": "make_rock_issue_api_v1_teams__team_id__rocks__rock_id__issue_post",
+        "parameters": [
+          {
+            "description": "Rock id, e.g. r2",
+            "in": "path",
+            "name": "rock_id",
+            "required": true,
+            "schema": {
+              "description": "Rock id, e.g. r2",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Rock Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Team id, e.g. team_lead",
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "description": "Team id, e.g. team_lead",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Empty"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MadeIssue"
+                }
+              }
+            },
+            "description": "An open Issue already existed (`created: false`)"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MadeIssue"
+                }
+              }
+            },
+            "description": "A new Issue was created (`created: true`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Make it an Issue from an off-track Rock (201 created, 200 existing)",
+        "tags": [
+          "Rocks"
+        ]
+      }
+    },
     "/api/v1/teams/{team_id}/scorecard": {
       "get": {
         "operationId": "get_scorecard_api_v1_teams__team_id__scorecard_get",
@@ -2922,6 +3102,78 @@
           }
         },
         "summary": "Set Todo Done",
+        "tags": [
+          "To-Dos"
+        ]
+      }
+    },
+    "/api/v1/todos/{todo_id}/issue": {
+      "post": {
+        "operationId": "make_todo_issue_api_v1_todos__todo_id__issue_post",
+        "parameters": [
+          {
+            "description": "To-Do id, e.g. t12",
+            "in": "path",
+            "name": "todo_id",
+            "required": true,
+            "schema": {
+              "description": "To-Do id, e.g. t12",
+              "pattern": "^[a-z0-9_]{1,64}$",
+              "title": "Todo Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Empty"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MadeIssue"
+                }
+              }
+            },
+            "description": "An open Issue already existed (`created: false`)"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MadeIssue"
+                }
+              }
+            },
+            "description": "A new Issue was created (`created: true`)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Make it an Issue from an overdue To-Do (201 created, 200 existing)",
         "tags": [
           "To-Dos"
         ]

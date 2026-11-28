@@ -34,6 +34,7 @@ SAMPLE = {
     "issue_id": "i1",
     "todo_id": "t12",
     "meeting_id": "mt1",
+    "rock_id": "r2",  # an off-track Rock of team_lead (bonus 3)
 }
 TEAM_SCOPED = re.compile(r"\{(team_id|issue_id|todo_id|meeting_id)\}")
 

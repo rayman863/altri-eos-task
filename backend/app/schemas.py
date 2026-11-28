@@ -225,10 +225,33 @@ class Scorecard(Out):
 
 
 class IssueSource(Out):
+    """A Scorecard cell (Make it an Issue on an off-track cell)."""
+
     kind: Literal["measurable_week"]
     measurable_id: str
     measurable_name: str
     week_start: date
+
+
+class RockIssueSource(Out):
+    """An off-track Rock (bonus 3)."""
+
+    kind: Literal["rock"]
+    rock_id: str
+    rock_title: str
+
+
+class TodoIssueSource(Out):
+    """An overdue To-Do (bonus 3)."""
+
+    kind: Literal["todo"]
+    todo_id: str
+    todo_title: str
+
+
+AnyIssueSource = Annotated[
+    IssueSource | RockIssueSource | TodoIssueSource, Field(discriminator="kind")
+]
 
 
 class IssueOut(Out):
@@ -239,7 +262,7 @@ class IssueOut(Out):
     created_at: datetime
     solved_at: datetime | None
     resolution_note: str | None
-    source: IssueSource | None
+    source: AnyIssueSource | None
     todo_count: int
     version: int
 
@@ -263,6 +286,7 @@ class TodoOut(Out):
     overdue: bool
     source_issue: SourceIssueRef | None
     created_at: datetime | None
+    open_issue_id: str | None = Field(description="The unsolved Issue made from this To-Do")
 
 
 class WeekCompletion(Out):
@@ -294,6 +318,7 @@ class RockOut(Out):
     status: Literal["on_track", "off_track", "complete"]
     progress_percent: int
     milestones: list[MilestoneOut]
+    open_issue_id: str | None = Field(description="The unsolved Issue made from this Rock")
 
 
 class RockList(Out):

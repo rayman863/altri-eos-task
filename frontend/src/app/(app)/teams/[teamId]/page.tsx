@@ -33,7 +33,7 @@ export default async function TeamPage({ params }: PageProps<"/teams/[teamId]">)
         </Suspense>
       </div>
       <Suspense fallback={<SectionSkeleton rows={3} />}>
-        <RocksSection teamId={teamId} />
+        <RocksSection teamId={teamId} editable={editable} />
       </Suspense>
     </div>
   );

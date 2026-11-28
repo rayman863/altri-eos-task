@@ -1,11 +1,12 @@
 import { sectionError } from "@/components/ErrorCard";
 import { Badge } from "@/components/ui/badge";
+import { IssueLink, MakeIssueButton } from "@/features/issues/MakeIssueButton.client";
 import { getTodos } from "@/lib/api/queries";
 import type { Schemas } from "@/lib/api/server";
 import { formatDate, formatDay } from "@/lib/time/format";
 import { cn } from "@/lib/utils";
 
-import { setTodoDone } from "./actions";
+import { makeIssueFromTodo, setTodoDone } from "./actions";
 import { TodoDoneToggle } from "./TodoDoneToggle.client";
 
 /** Open To-Dos first (by due date), then done ones, plus last week's completion rate
@@ -56,7 +57,16 @@ export async function TodosSection({ teamId, editable }: { teamId: string; edita
                   {todo.source_issue ? ` · from Issue: ${todo.source_issue.title}` : ""}
                 </p>
               </div>
-              {todo.overdue ? <Badge variant="destructive">Overdue</Badge> : null}
+              {todo.overdue ? (
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <Badge variant="destructive">Overdue</Badge>
+                  {todo.open_issue_id ? (
+                    <IssueLink teamId={teamId} issueId={todo.open_issue_id} source={todo.title} />
+                  ) : editable ? (
+                    <MakeIssueButton label={`Make it an Issue: ${todo.title}`} action={makeIssueFromTodo.bind(null, todo.id)} />
+                  ) : null}
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

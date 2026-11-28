@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models as m
-from app.authz import ResourceAccess
+from app.authz import ResourceAccess, TeamAccess
 from app.cache import RequestCache, Until, next_change
 from app.errors import AppError
 from app.realtime import team_changed
@@ -15,6 +15,7 @@ from app.rules.todos import done_as_of, exists_as_of, is_overdue, todo_completio
 from app.rules.types import Todo
 from app.rules.weeks import last_closed_week, today
 from app.services.common import bump_team, team_state, team_tz
+from app.services.issues import get_issue, insert_source_issue, open_issue_for, open_issue_ids
 
 
 def _todo_query() -> Any:
@@ -41,7 +42,7 @@ def _rule(r: Any) -> Todo:
     return Todo(r.id, r.due_date, r.done_at, r.created_at)
 
 
-def todo_out(r: Any, now: datetime, tz: Any) -> dict[str, Any]:
+def todo_out(r: Any, now: datetime, tz: Any, open_issue_id: str | None) -> dict[str, Any]:
     rule = _rule(r)
     return {
         "id": r.id,
@@ -55,6 +56,7 @@ def todo_out(r: Any, now: datetime, tz: Any) -> dict[str, Any]:
             {"id": r.source_issue_id, "title": r.source_issue_title} if r.source_issue_id else None
         ),
         "created_at": r.created_at,
+        "open_issue_id": open_issue_id,  # Make it an Issue from an overdue To-Do (bonus 3)
     }
 
 
@@ -62,7 +64,8 @@ async def get_todo(session: AsyncSession, todo_id: str, now: datetime) -> dict[s
     row = (await session.execute(_todo_query().where(m.Todo.id == todo_id))).one_or_none()
     if row is None:
         raise AppError(404, "not_found", "No such To-Do.")
-    return todo_out(row, now, await team_tz(session, row.team_id))
+    tz = await team_tz(session, row.team_id)
+    return todo_out(row, now, tz, await open_issue_for(session, "todo", todo_id))
 
 
 async def list_todos(
@@ -86,6 +89,7 @@ async def _list_todos(session: AsyncSession, team_id: str, now: datetime) -> Unt
     all_rows = list(await session.execute(_todo_query().where(m.Todo.team_id == team_id)))
     until = next_change((t for r in all_rows for t in (r.created_at, r.done_at)), now)
     rows = [r for r in all_rows if exists_as_of(_rule(r), now)]
+    open_issues = await open_issue_ids(session, team_id, "todo")
     open_rows = sorted(
         (r for r in rows if not done_as_of(_rule(r), now)), key=lambda r: (r.due_date, r.id)
     )
@@ -97,7 +101,7 @@ async def _list_todos(session: AsyncSession, team_id: str, now: datetime) -> Unt
     week = last_closed_week(now, tz)
     completion = todo_completion([_rule(r) for r in rows], week, now, tz)
     result = {
-        "items": [todo_out(r, now, tz) for r in (*open_rows, *done_rows)],
+        "items": [todo_out(r, now, tz, open_issues.get(r.id)) for r in (*open_rows, *done_rows)],
         "last_closed_week_completion": (
             None
             if completion is None
@@ -133,3 +137,22 @@ async def set_done(
         )
     await team_changed(session, access.team_id, version, "todos", [access.resource_id])
     return await get_todo(session, access.resource_id, now)
+
+
+async def make_issue_from_todo(
+    session: AsyncSession, access: TeamAccess, todo_id: str, now: datetime
+) -> tuple[dict[str, Any], bool]:
+    """Bonus 3: Make it an Issue from an overdue To-Do (services/issues.py has the shared
+    dedupe). Returns (issue, created); an open Issue for the To-Do wins."""
+    version = await bump_team(session, access.team_id)  # the team lock comes first
+    row = (await session.execute(_todo_query().where(m.Todo.id == todo_id))).one_or_none()
+    if row is None or row.team_id != access.team_id:
+        raise AppError(404, "not_found", "No such To-Do.")
+    existing = await open_issue_for(session, "todo", todo_id)
+    if existing is not None:
+        return await get_issue(session, existing), False
+    tz = await team_tz(session, access.team_id)
+    if not is_overdue(_rule(row), today(now, tz), now):
+        raise AppError(422, "todo_not_overdue", "Only an overdue To-Do can become an Issue.")
+    title = f"Overdue To-Do: {row.title}"
+    return await insert_source_issue(session, access, version, "todo", todo_id, title, now)

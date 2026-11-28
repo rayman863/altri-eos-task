@@ -2,11 +2,15 @@ import { sectionError } from "@/components/ErrorCard";
 import { StatusPill } from "@/components/Status";
 import { getRocks } from "@/lib/api/queries";
 import type { Schemas } from "@/lib/api/server";
+import { IssueLink, MakeIssueButton } from "@/features/issues/MakeIssueButton.client";
 import { formatDate } from "@/lib/time/format";
 
+import { makeIssueFromRock } from "./actions";
+
 /** Rocks for the current quarter, read-only, with expandable Milestones (native <details>,
- * no JavaScript). Status and progress come from the API's rules. */
-export async function RocksSection({ teamId }: { teamId: string }) {
+ * no JavaScript). Status and progress come from the API's rules. An off-track Rock offers
+ * Make it an Issue (bonus 3), below its <details> so the click doesn't toggle it. */
+export async function RocksSection({ teamId, editable }: { teamId: string; editable: boolean }) {
   let rocks: Schemas["RockList"];
   try {
     rocks = await getRocks(teamId);
@@ -65,6 +69,15 @@ export async function RocksSection({ teamId }: { teamId: string }) {
                   </ul>
                 )}
               </details>
+              {rock.status === "off_track" ? (
+                <div className="mt-2">
+                  {rock.open_issue_id ? (
+                    <IssueLink teamId={teamId} issueId={rock.open_issue_id} source={rock.title} />
+                  ) : editable ? (
+                    <MakeIssueButton label={`Make it an Issue: ${rock.title}`} action={makeIssueFromRock.bind(null, teamId, rock.id)} />
+                  ) : null}
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

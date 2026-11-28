@@ -3,7 +3,8 @@
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models as m
@@ -22,6 +23,7 @@ NEW_TODO_DUE_DAYS = 7  # plan 3.5: today in company time + 7 days
 
 
 def _issue_query() -> Any:
+    source_todo = m.Todo.__table__.alias("source_todo")
     todo_counts = (
         select(m.Todo.source_issue_id, func.count().label("n"))
         .where(m.Todo.source_issue_id.is_not(None))
@@ -43,11 +45,17 @@ def _issue_query() -> Any:
             m.Issue.source_measurable_id,
             m.Measurable.name.label("measurable_name"),
             m.Issue.source_week_start,
+            m.Issue.source_rock_id,
+            m.Rock.title.label("rock_title"),
+            m.Issue.source_todo_id,
+            source_todo.c.title.label("todo_title"),
             func.coalesce(todo_counts.c.n, 0).label("todo_count"),
             m.Issue.version,
         )
         .join(m.User, m.User.id == m.Issue.owner_id)
         .outerjoin(m.Measurable, m.Measurable.id == m.Issue.source_measurable_id)
+        .outerjoin(m.Rock, m.Rock.id == m.Issue.source_rock_id)
+        .outerjoin(source_todo, source_todo.c.id == m.Issue.source_todo_id)
         .outerjoin(todo_counts, todo_counts.c.source_issue_id == m.Issue.id)
     )
 
@@ -61,6 +69,10 @@ def issue_out(r: Any) -> dict[str, Any]:
             "measurable_name": r.measurable_name,
             "week_start": r.source_week_start,
         }
+    elif r.source_kind == "rock":
+        source = {"kind": "rock", "rock_id": r.source_rock_id, "rock_title": r.rock_title}
+    elif r.source_kind == "todo":
+        source = {"kind": "todo", "todo_id": r.source_todo_id, "todo_title": r.todo_title}
     return {
         "id": r.id,
         "title": r.title,
@@ -221,3 +233,74 @@ async def add_todo(
     )
     await team_changed(session, access.team_id, version, "todos", [todo_id])
     return todo_id
+
+
+# ---- Make it an Issue from a Rock or a To-Do (bonus 3) --------------------------------------
+# The same rules as for a Scorecard cell (plan 3.8, services/scorecard.make_issue): one open
+# Issue per source, guaranteed by a partial unique index (ux_issues_open_rock / _todo,
+# migration 0003), with the team lock taken first so simultaneous clicks queue. The caller
+# takes the lock, loads the source (404) and returns an open Issue if there is one; then
+# checks the source qualifies (422); then calls `insert_source_issue`.
+
+_SOURCE_COLUMN = {"rock": m.Issue.source_rock_id, "todo": m.Issue.source_todo_id}
+
+
+async def open_issue_for(session: AsyncSession, kind: str, source_id: str) -> str | None:
+    """The unsolved Issue made from this Rock or To-Do, if any."""
+    return await session.scalar(
+        select(m.Issue.id).where(
+            _SOURCE_COLUMN[kind] == source_id,
+            m.Issue.source_kind == kind,
+            m.Issue.solved_at.is_(None),
+        )
+    )
+
+
+async def open_issue_ids(session: AsyncSession, team_id: str, kind: str) -> dict[str, str]:
+    """Source id -> unsolved Issue id, for a team's Rocks or To-Dos (their read models)."""
+    column = _SOURCE_COLUMN[kind]
+    rows = await session.execute(
+        select(column, m.Issue.id).where(
+            m.Issue.team_id == team_id,
+            m.Issue.source_kind == kind,
+            m.Issue.solved_at.is_(None),
+        )
+    )
+    return {source_id: issue_id for source_id, issue_id in rows}
+
+
+async def insert_source_issue(
+    session: AsyncSession,
+    access: TeamAccess,
+    version: int,
+    kind: str,
+    source_id: str,
+    title: str,
+    now: datetime,
+) -> tuple[dict[str, Any], bool]:
+    """Insert the Issue unless a concurrent request got there first: (issue, created)."""
+    inserted = await session.scalar(
+        pg_insert(m.Issue)
+        .values(
+            id=new_id("i"),
+            team_id=access.team_id,
+            owner_id=access.user.id,  # the clicker owns it
+            title=title[:200],
+            priority=None,
+            created_at=now,
+            source_kind=kind,
+            **{_SOURCE_COLUMN[kind].key: source_id},
+        )
+        .on_conflict_do_nothing(
+            index_elements=[_SOURCE_COLUMN[kind]],
+            index_where=text(f"solved_at IS NULL AND source_kind = '{kind}'"),
+        )
+        .returning(m.Issue.id)
+    )
+    if inserted is None:
+        winner = await open_issue_for(session, kind, source_id)
+        if winner is None:  # the winner was solved in between: let the client retry
+            raise AppError(409, "conflict", "The Issue changed while it was created. Try again.")
+        return await get_issue(session, winner), False
+    await team_changed(session, access.team_id, version, "issues", [inserted])
+    return await get_issue(session, inserted), True

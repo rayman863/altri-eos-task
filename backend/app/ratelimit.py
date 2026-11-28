@@ -3,7 +3,7 @@
 | Bucket       | What                                  | Limit         | Keyed on          |
 |--------------|---------------------------------------|---------------|-------------------|
 | `login`      | POST /auth/login                      | 10 per minute | the client address |
-| `make_issue` | POST .../scores/{week}/issue          | 30 per minute | the signed-in user |
+| `make_issue` | POST .../issue (cell, Rock, To-Do)      | 30 per minute | the signed-in user |
 | `write`      | every other POST, PUT, PATCH, DELETE  | 120 per minute| the signed-in user |
 
 Logout is never limited (it only takes access away).
@@ -90,7 +90,7 @@ def _bucket(request: Request) -> tuple[str, str] | None:
     )
     if claims is None:
         return None
-    if "/scores/" in path and path.endswith("/issue"):
+    if path.endswith("/issue"):  # Make it an Issue from a cell, a Rock or a To-Do
         return "make_issue", claims[0]
     return "write", claims[0]
 

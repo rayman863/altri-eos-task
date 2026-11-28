@@ -88,3 +88,19 @@ test("opening a cell and leaving it unchanged never touches a newer value someon
   await expect(casey.getByRole("alert").filter({ hasText: "Someone else changed" })).toHaveCount(0);
   await expect(scoreCell(blake, cell, "2026-10-19")).toHaveAccessibleName(/: 2, Off track$/);
 });
+
+test("an overdue To-Do and an off-track Rock can each become one Issue", async ({ signIn }) => {
+  const casey = await signIn("Casey");
+
+  await casey.getByRole("button", { name: "Make it an Issue: Publish hiring ad" }).click();
+  await expect(casey.getByText("From the To-Do: Publish hiring ad")).toBeVisible();
+  await expect(casey.getByRole("button", { name: "Make it an Issue: Publish hiring ad" })).toHaveCount(0);
+
+  await casey.getByRole("button", { name: "Make it an Issue: Refresh brand" }).click();
+  await expect(casey.getByText("From the Rock: Refresh brand")).toBeVisible();
+  await expect(casey.getByRole("button", { name: "Make it an Issue: Refresh brand" })).toHaveCount(0);
+
+  // Each source now links to its Issue instead of offering a second one.
+  await expect(casey.getByRole("link", { name: "Open Issue: Publish hiring ad" })).toBeVisible();
+  await expect(casey.getByRole("link", { name: "Open Issue: Refresh brand" })).toBeVisible();
+});

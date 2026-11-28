@@ -402,6 +402,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teams/{team_id}/rocks/{rock_id}/issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make it an Issue from an off-track Rock (201 created, 200 existing) */
+        post: operations["make_rock_issue_api_v1_teams__team_id__rocks__rock_id__issue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teams/{team_id}/scorecard": {
         parameters: {
             query?: never;
@@ -447,6 +464,23 @@ export interface paths {
         /** Set Todo Done */
         put: operations["set_todo_done_api_v1_todos__todo_id__done_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/todos/{todo_id}/issue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make it an Issue from an overdue To-Do (201 created, 200 existing) */
+        post: operations["make_todo_issue_api_v1_todos__todo_id__issue_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -606,7 +640,8 @@ export interface components {
             resolution_note: string | null;
             /** Solved At */
             solved_at: string | null;
-            source: components["schemas"]["IssueSource"] | null;
+            /** Source */
+            source: (components["schemas"]["IssueSource"] | components["schemas"]["RockIssueSource"] | components["schemas"]["TodoIssueSource"]) | null;
             /** Title */
             title: string;
             /** Todo Count */
@@ -627,11 +662,14 @@ export interface components {
             /** Resolution Note */
             resolution_note: string;
         };
-        /** IssueSource */
+        /**
+         * IssueSource
+         * @description A Scorecard cell (Make it an Issue on an off-track cell).
+         */
         IssueSource: {
             /**
-             * Kind
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             kind: "measurable_week";
             /** Measurable Id */
@@ -831,6 +869,21 @@ export interface components {
             /** User Id */
             user_id: string;
         };
+        /**
+         * RockIssueSource
+         * @description An off-track Rock (bonus 3).
+         */
+        RockIssueSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rock";
+            /** Rock Id */
+            rock_id: string;
+            /** Rock Title */
+            rock_title: string;
+        };
         /** RockList */
         RockList: {
             /** Items */
@@ -844,6 +897,11 @@ export interface components {
             id: string;
             /** Milestones */
             milestones: components["schemas"]["MilestoneOut"][];
+            /**
+             * Open Issue Id
+             * @description The unsolved Issue made from this Rock
+             */
+            open_issue_id: string | null;
             owner: components["schemas"]["UserRef"];
             /** Progress Percent */
             progress_percent: number;
@@ -954,6 +1012,21 @@ export interface components {
             /** Done */
             done: boolean;
         };
+        /**
+         * TodoIssueSource
+         * @description An overdue To-Do (bonus 3).
+         */
+        TodoIssueSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "todo";
+            /** Todo Id */
+            todo_id: string;
+            /** Todo Title */
+            todo_title: string;
+        };
         /** TodoList */
         TodoList: {
             /** Items */
@@ -973,6 +1046,11 @@ export interface components {
             due_date: string;
             /** Id */
             id: string;
+            /**
+             * Open Issue Id
+             * @description The unsolved Issue made from this To-Do
+             */
+            open_issue_id: string | null;
             /** Overdue */
             overdue: boolean;
             owner: components["schemas"]["UserRef"];
@@ -1874,6 +1952,53 @@ export interface operations {
             };
         };
     };
+    make_rock_issue_api_v1_teams__team_id__rocks__rock_id__issue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Rock id, e.g. r2 */
+                rock_id: string;
+                /** @description Team id, e.g. team_lead */
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Empty"] | null;
+            };
+        };
+        responses: {
+            /** @description An open Issue already existed (`created: false`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MadeIssue"];
+                };
+            };
+            /** @description A new Issue was created (`created: true`) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MadeIssue"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_scorecard_api_v1_teams__team_id__scorecard_get: {
         parameters: {
             query?: never;
@@ -1961,6 +2086,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TodoOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    make_todo_issue_api_v1_todos__todo_id__issue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description To-Do id, e.g. t12 */
+                todo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Empty"] | null;
+            };
+        };
+        responses: {
+            /** @description An open Issue already existed (`created: false`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MadeIssue"];
+                };
+            };
+            /** @description A new Issue was created (`created: true`) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MadeIssue"];
                 };
             };
             /** @description Validation Error */

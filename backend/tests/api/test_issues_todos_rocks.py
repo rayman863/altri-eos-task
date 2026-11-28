@@ -112,6 +112,7 @@ def test_todo_list(login):
         "overdue": True,
         "source_issue": None,
         "created_at": "2026-10-25T21:00:00Z",
+        "open_issue_id": None,
     }
     open_items = [t for t in body["items"] if t["done_at"] is None]
     done_items = [t for t in body["items"] if t["done_at"] is not None]

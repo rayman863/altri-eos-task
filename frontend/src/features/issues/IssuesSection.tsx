@@ -12,8 +12,16 @@ import { addIssueTodo, createIssue, setPriority, solveIssue } from "./actions";
 import { AddTodoDialog, NewIssueForm, PrioritySelect, SolveIssueDialog } from "./IssueForms.client";
 
 function sourceLabel(issue: Schemas["IssueOut"]): string | null {
-  if (!issue.source) return null;
-  return `From the Scorecard: ${issue.source.measurable_name}, week of ${formatDay(issue.source.week_start)}`;
+  const source = issue.source;
+  if (!source) return null;
+  switch (source.kind) {
+    case "measurable_week":
+      return `From the Scorecard: ${source.measurable_name}, week of ${formatDay(source.week_start)}`;
+    case "rock":
+      return `From the Rock: ${source.rock_title}`;
+    case "todo":
+      return `From the To-Do: ${source.todo_title}`;
+  }
 }
 
 /**

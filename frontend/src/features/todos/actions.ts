@@ -13,3 +13,13 @@ export async function setTodoDone(todoId: string, done: boolean): Promise<Action
   if (result.ok) refresh();
   return result.ok ? { ok: true } : result;
 }
+
+/** Make it an Issue from an overdue To-Do (bonus 3); an open one is returned, not doubled. */
+export async function makeIssueFromTodo(todoId: string): Promise<ActionResult> {
+  const api = await apiClient();
+  const result = await write(
+    api.POST("/api/v1/todos/{todo_id}/issue", { params: { path: { todo_id: todoId } }, body: {} }),
+  );
+  if (result.ok) refresh();
+  return result.ok ? { ok: true } : result;
+}
